@@ -17,7 +17,7 @@ on:
 
 env:
   REPO_URL: https://github.com/fanchmwrt/fanchmwrt.git
-  REPO_BRANCH: master
+  REPO_BRANCH: fanchmwrt-25.12.6
   TZ: Asia/Shanghai
 
 jobs:
