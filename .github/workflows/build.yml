@@ -1,0 +1,101 @@
+name: Build FanchmWrt for Phicomm K2
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Target device'
+        required: true
+        default: 'k2-16m'
+        type: choice
+        options:
+          - k2-16m
+          - k2-8m
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REPO_URL: https://github.com/fanchmwrt/fanchmwrt.git
+  REPO_BRANCH: master
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential ccache ecj fastjar file g++ gawk gettext git \
+            java-propose-classpath libelf-dev libncurses5-dev libncursesw5-dev \
+            libssl-dev python3 python3-setuptools python3-dev \
+            rsync subversion swig time xsltproc zlib1g-dev unzip wget
+
+      - name: Clone upstream source
+        run: |
+          git clone --depth=1 -b "$REPO_BRANCH" "$REPO_URL" openwrt
+          cd openwrt
+          echo "Upstream commit: $(git log --oneline -1)"
+
+      - name: Apply custom patches
+        run: |
+          cd openwrt
+          cp ../patches/mt7620a_phicomm_k2-16m.dts target/linux/ramips/dts/
+          python3 ../scripts/register_device.py
+          grep -c "phicomm_k2-16m" target/linux/ramips/image/mt7620.mk
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Load build config
+        run: |
+          cd openwrt
+          cp ../config/${{ github.event.inputs.device || 'k2-16m' }}.config .config
+          make defconfig
+          echo "=== Target ==="
+          grep -E '^CONFIG_TARGET_PROFILE' .config
+
+      - name: Download package sources
+        run: |
+          cd openwrt
+          make download -j8 || make download -j1 V=s
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Compile firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Collect artifacts
+        run: |
+          cd openwrt
+          mkdir -p ../output
+          cp bin/targets/ramips/mt7620/*.bin ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/*.manifest ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/sha256sums ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/config.buildinfo ../output/ 2>/dev/null || true
+          ls -la ../output
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: FanchmWrt-K2-${{ github.event.inputs.device || 'k2-16m' }}
+          path: output/*
+          retention-days: 30

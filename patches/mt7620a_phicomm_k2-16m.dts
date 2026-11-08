@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "mt7620a_phicomm_k2x.dtsi"
+
+/ {
+	compatible = "phicomm,k2-16m", "ralink,mt7620a-soc";
+	model = "Phicomm K2 (16M flash mod)";
+};
+
+&partitions {
+	partition@50000 {
+		compatible = "denx,uimage";
+		label = "firmware";
+		reg = <0x50000 0xfb0000>;
+	};
+};
+
+&ethernet {
+	mediatek,portmap = "llllw";
+};
+
+&wmac {
+	pinctrl-names = "default", "pa_gpio";
+	pinctrl-0 = <&pa_pins>;
+	pinctrl-1 = <&pa_gpio_pins>;
+};

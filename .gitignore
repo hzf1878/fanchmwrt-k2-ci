@@ -1,0 +1,9 @@
+# Build artifacts
+openwrt/
+output/
+*.log
+
+# Editor / OS
+.DS_Store
+*.swp
+__pycache__/

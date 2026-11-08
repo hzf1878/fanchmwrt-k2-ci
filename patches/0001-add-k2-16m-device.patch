@@ -1,0 +1,22 @@
+diff --git a/target/linux/ramips/image/mt7620.mk b/target/linux/ramips/image/mt7620.mk
+index d5c5ef4..4288551 100644
+--- a/target/linux/ramips/image/mt7620.mk
++++ b/target/linux/ramips/image/mt7620.mk
+@@ -987,6 +987,17 @@ define Device/ohyeah_oy-0001
+ endef
+ TARGET_DEVICES += ohyeah_oy-0001
+ 
++define Device/phicomm_k2-16m
++  SOC := mt7620a
++  IMAGE_SIZE := 16064k
++  DEVICE_VENDOR := Phicomm
++  DEVICE_MODEL := K2
++  DEVICE_VARIANT:= 16M flash mod
++  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci kmod-usb-storage block-mount
++  SUPPORTED_DEVICES += psg1218 psg1218a phicomm,psg1218a
++endef
++TARGET_DEVICES += phicomm_k2-16m
++
+ define Device/phicomm_k2-v22.4
+   SOC := mt7620a
+   IMAGE_SIZE := 7872k
