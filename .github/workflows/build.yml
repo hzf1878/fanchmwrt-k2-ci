@@ -26,6 +26,11 @@ on:
         required: true
         default: false
         type: boolean
+      with_ssrplus:
+        description: 'Include luci-app-ssr-plus GUI (needs with_xray, ~2MB, 16M flash only)'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -79,7 +84,21 @@ jobs:
             echo "::warning::xray-core 需要约 1.2MB，k2-8m 的可写区放不下，已自动关闭"
             WITH_XRAY="false"
           fi
+
+          # ssr-plus：依赖 xray-core，且仅 16M 可用
+          WITH_SSRPLUS="${{ github.event.inputs.with_ssrplus }}"
+          if [ -z "$WITH_SSRPLUS" ]; then WITH_SSRPLUS="false"; fi
+          if [ "$WITH_SSRPLUS" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
+            echo "::warning::luci-app-ssr-plus 约 2MB，k2-8m 放不下，已自动关闭"
+            WITH_SSRPLUS="false"
+          fi
+          if [ "$WITH_SSRPLUS" = "true" ] && [ "$WITH_XRAY" != "true" ]; then
+            echo "::warning::ssr-plus 需要 xray-core，已自动开启 with_xray"
+            WITH_XRAY="true"
+          fi
+
           echo "with_xray=$WITH_XRAY" >> "$GITHUB_OUTPUT"
+          echo "with_ssrplus=$WITH_SSRPLUS" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -87,6 +106,7 @@ jobs:
           echo "use_dl        : $([ "$USE_CACHE" = "true" ] && echo true || echo false)"
           echo "use_ccache    : $USE_CCACHE"
           echo "with_xray     : $WITH_XRAY"
+          echo "with_ssrplus  : $WITH_SSRPLUS"
 
       - name: Free disk space
         run: |
@@ -162,11 +182,28 @@ jobs:
           python3 ../scripts/register_device.py
           grep -c "phicomm_k2-16m" target/linux/ramips/image/mt7620.mk
 
+      - name: Add third-party feeds
+        run: |
+          cd openwrt
+          if [ "${{ steps.params.outputs.with_ssrplus }}" = "true" ]; then
+            # xray-core 由 openwrt/packages 提供，helloworld 里的同名包会造成冲突
+            # 只取其 luci-app-ssr-plus 及必要依赖，剔除其自带的 xray-core
+            echo "src-git helloworld https://github.com/fw876/helloworld.git" >> feeds.conf.default
+            echo "=== feeds.conf.default ==="
+            cat feeds.conf.default
+          else
+            echo "ssr-plus disabled, skip extra feed"
+          fi
+
       - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          if [ "${{ steps.params.outputs.with_ssrplus }}" = "true" ]; then
+            echo "=== ssr-plus 是否可装 ==="
+            ./scripts/feeds list -n 2>/dev/null | grep -i "ssr-plus" || echo "未找到 ssr-plus"
+          fi
 
       - name: Load build config
         run: |
@@ -192,6 +229,13 @@ jobs:
             echo "xray-core: disabled"
           fi
 
+          # ssr-plus 与 feeds 管理
+          if [ "${{ steps.params.outputs.with_ssrplus }}" = "true" ]; then
+            python3 ../scripts/configure_ssrplus.py enable
+          else
+            python3 ../scripts/configure_ssrplus.py disable
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
@@ -199,6 +243,8 @@ jobs:
           grep -E '^CONFIG_CCACHE' .config || echo "CONFIG_CCACHE not set"
           echo "=== xray ==="
           grep -E '^CONFIG_PACKAGE_xray-core' .config || echo "xray-core not in config"
+          echo "=== ssr-plus ==="
+          grep -E '^CONFIG_PACKAGE_luci-app-ssr-plus' .config || echo "ssr-plus not in config"
           ccache --version | head -1
 
       - name: Download package sources
@@ -231,7 +277,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_xray == 'true' && '-xray' || '' }}
+          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_ssrplus == 'true' && '-ssrplus' || (steps.params.outputs.with_xray == 'true' && '-xray' || '') }}
           path: output/*
           retention-days: 30
 
