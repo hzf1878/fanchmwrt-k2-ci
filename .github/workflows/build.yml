@@ -21,6 +21,11 @@ on:
         required: true
         default: true
         type: boolean
+      with_xray:
+        description: 'Include xray-core (trojan/VMess/VLESS/SS, ~1.2MB, needs 16M flash)'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -67,11 +72,21 @@ jobs:
             echo "use_dl=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # xray：默认不装；8M 设备强制关闭（空间不够）
+          WITH_XRAY="${{ github.event.inputs.with_xray }}"
+          if [ -z "$WITH_XRAY" ]; then WITH_XRAY="false"; fi
+          if [ "$WITH_XRAY" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
+            echo "::warning::xray-core 需要约 1.2MB，k2-8m 的可写区放不下，已自动关闭"
+            WITH_XRAY="false"
+          fi
+          echo "with_xray=$WITH_XRAY" >> "$GITHUB_OUTPUT"
+
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
           echo "use_cache     : $USE_CACHE"
           echo "use_dl        : $([ "$USE_CACHE" = "true" ] && echo true || echo false)"
           echo "use_ccache    : $USE_CCACHE"
+          echo "with_xray     : $WITH_XRAY"
 
       - name: Free disk space
         run: |
@@ -157,6 +172,7 @@ jobs:
         run: |
           cd openwrt
           cp ../config/${{ steps.params.outputs.device }}.config .config
+
           # ccache 只在启用时打开
           sed -i '/^CONFIG_CCACHE=/d' .config
           if [ "${{ steps.params.outputs.use_ccache }}" = "true" ]; then
@@ -164,11 +180,25 @@ jobs:
           else
             echo '# CONFIG_CCACHE is not set' >> .config
           fi
+
+          # xray-core 开关
+          sed -i '/^CONFIG_PACKAGE_xray-core=/d' .config
+          sed -i '/^# CONFIG_PACKAGE_xray-core is not set/d' .config
+          if [ "${{ steps.params.outputs.with_xray }}" = "true" ]; then
+            echo 'CONFIG_PACKAGE_xray-core=y' >> .config
+            echo "xray-core: enabled"
+          else
+            echo '# CONFIG_PACKAGE_xray-core is not set' >> .config
+            echo "xray-core: disabled"
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
           echo "=== ccache ==="
           grep -E '^CONFIG_CCACHE' .config || echo "CONFIG_CCACHE not set"
+          echo "=== xray ==="
+          grep -E '^CONFIG_PACKAGE_xray-core' .config || echo "xray-core not in config"
           ccache --version | head -1
 
       - name: Download package sources
@@ -201,7 +231,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: FanchmWrt-K2-${{ steps.params.outputs.device }}
+          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_xray == 'true' && '-xray' || '' }}
           path: output/*
           retention-days: 30
 
