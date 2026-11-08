@@ -210,12 +210,20 @@ jobs:
           cd openwrt
           cp ../config/${{ steps.params.outputs.device }}.config .config
 
-          # ccache 只在启用时打开
+          # ccache 需要 CONFIG_DEVEL=y，否则 config CCACHE 的 "if DEVEL" 条件不成立
+          # 该选项会被 defconfig 直接丢弃，ccache 完全不会生效
           sed -i '/^CONFIG_CCACHE=/d' .config
+          sed -i '/^# CONFIG_CCACHE is not set/d' .config
+          sed -i '/^CONFIG_DEVEL=/d' .config
+          sed -i '/^# CONFIG_DEVEL is not set/d' .config
           if [ "${{ steps.params.outputs.use_ccache }}" = "true" ]; then
+            echo 'CONFIG_DEVEL=y' >> .config
             echo 'CONFIG_CCACHE=y' >> .config
+            echo "ccache: enabled (with CONFIG_DEVEL)"
           else
+            echo '# CONFIG_DEVEL is not set' >> .config
             echo '# CONFIG_CCACHE is not set' >> .config
+            echo "ccache: disabled"
           fi
 
           # xray-core 开关
