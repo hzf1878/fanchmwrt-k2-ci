@@ -1,0 +1,179 @@
+name: Clear build caches
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Target device to clear (all / k2-16m / k2-8m)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - k2-16m
+          - k2-8m
+      cache_type:
+        description: 'Which cache to clear (all / dl / ccache)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - dl
+          - ccache
+      dry_run:
+        description: 'Dry run (only list, do not delete)'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  clear:
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Resolve parameters
+        id: params
+        run: |
+          echo "device=${{ inputs.device }}" >> "$GITHUB_OUTPUT"
+          echo "ctype=${{ inputs.cache_type }}" >> "$GITHUB_OUTPUT"
+          echo "dry=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
+          echo "Device  : ${{ inputs.device }}"
+          echo "Type    : ${{ inputs.cache_type }}"
+          echo "Dry run : ${{ inputs.dry_run }}"
+
+      - name: Warn if a build is running
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUNNING=$(gh api -X GET \
+            "repos/${{ github.repository }}/actions/runs?status=in_progress&per_page=10" \
+            --jq '.workflow_runs[] | select(.name | contains("Build")) | "#\(.run_number) \(.name)"' \
+            2>/dev/null || true)
+          if [ -n "$RUNNING" ]; then
+            echo "::warning::Build 正在进行，清除缓存不会中断它，但本轮编译将无法保存新缓存："
+            echo "$RUNNING"
+          else
+            echo "没有正在进行的编译，可以安全清除。"
+          fi
+
+      - name: List caches before
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== 清除前 ==="
+          gh api -X GET "repos/${{ github.repository }}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)\t\(.ref)"' \
+            | awk -F'\t' '{printf "%s\t%8.1f MB\t%s\n", $1, $2/1048576, $3}' || true
+          echo
+          gh api -X GET "repos/${{ github.repository }}/actions/caches?per_page=100" \
+            --jq 'if (.actions_caches | length) == 0 then "0" else ([.actions_caches[].size_in_bytes] | add) end' \
+            | awk '{printf "合计: %.1f MB\n", $1/1048576}'
+
+      - name: Delete caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVICE: ${{ inputs.device }}
+          CTYPE: ${{ inputs.cache_type }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          REPO="${{ github.repository }}"
+
+          # 缓存类型 -> key 前缀
+          case "$CTYPE" in
+            dl)     PREFIXES="dl-" ;;
+            ccache) PREFIXES="ccache-" ;;
+            all)    PREFIXES="dl- ccache-" ;;
+          esac
+
+          # 缓存 key 格式: <type>-<device>-<confighash>
+          # 所以按设备过滤时至少要匹配 "<type>-<device>-"
+          DELETED=0
+          SKIPPED=0
+
+          for PREFIX in $PREFIXES; do
+            if [ "$DEVICE" = "all" ]; then
+              KEY_FILTER="$PREFIX"
+              EXPECT_PREFIX="$PREFIX"
+            else
+              KEY_FILTER="${PREFIX}${DEVICE}-"
+              EXPECT_PREFIX="${PREFIX}${DEVICE}-"
+            fi
+            echo "=== 处理: ${KEY_FILTER} ==="
+
+            PAGE=1
+            while [ "$PAGE" -le 20 ]; do
+              IDS=$(gh api -X GET \
+                "repos/${REPO}/actions/caches?per_page=100&page=${PAGE}&key=${KEY_FILTER}" \
+                --jq ".actions_caches[] | select(.key | startswith(\"${EXPECT_PREFIX}\")) | .id" \
+                2>/dev/null || true)
+              [ -z "$IDS" ] && break
+
+              for ID in $IDS; do
+                KEY=$(gh api -X GET "repos/${REPO}/actions/caches?per_page=100" \
+                  --jq ".actions_caches[] | select(.id == ${ID}) | .key" 2>/dev/null || echo "?")
+                # 二次确认前缀，防止误删
+                case "$KEY" in
+                  "$EXPECT_PREFIX"*)
+                    if [ "$DRY" = "true" ]; then
+                      echo "  [dry-run] 将删除 id=$ID  $KEY"
+                      SKIPPED=$((SKIPPED+1))
+                    else
+                      if gh api -X DELETE "repos/${REPO}/actions/caches/${ID}" >/dev/null 2>&1; then
+                        echo "  已删除 id=$ID  $KEY"
+                        DELETED=$((DELETED+1))
+                      else
+                        echo "  删除失败 id=$ID  $KEY"
+                      fi
+                    fi
+                    ;;
+                  *)
+                    echo "  跳过 id=$ID (key 不匹配: $KEY)"
+                    ;;
+                esac
+              done
+              PAGE=$((PAGE+1))
+            done
+          done
+
+          echo
+          if [ "$DRY" = "true" ]; then
+            echo "Dry run: 匹配到 $SKIPPED 条，未删除任何缓存"
+          else
+            echo "已删除 $DELETED 条缓存"
+          fi
+
+      - name: List caches after
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== 清除后 ==="
+          gh api -X GET "repos/${{ github.repository }}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)"' \
+            | awk -F'\t' '{printf "%s\t%8.1f MB\t%s\n", $1, $2/1048576, $3}' || true
+          echo
+          gh api -X GET "repos/${{ github.repository }}/actions/caches?per_page=100" \
+            --jq 'if (.actions_caches | length) == 0 then "0" else ([.actions_caches[].size_in_bytes] | add) end' \
+            | awk '{printf "剩余合计: %.1f MB\n", $1/1048576}'
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## 缓存清理结果"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "|---|---|"
+            echo "| 设备 | \`${{ inputs.device }}\` |"
+            echo "| 类型 | \`${{ inputs.cache_type }}\` |"
+            echo "| Dry run | \`${{ inputs.dry_run }}\` |"
+            echo ""
+            if [ "${{ inputs.dry_run }}" != "true" ]; then
+              echo "> 下次编译将冷启动，需要重新下载源码包并重建 ccache（约 85 分钟）。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
