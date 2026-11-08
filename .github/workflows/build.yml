@@ -19,6 +19,7 @@ env:
   REPO_URL: https://github.com/fanchmwrt/fanchmwrt.git
   REPO_BRANCH: fanchmwrt-25.12.6
   TZ: Asia/Shanghai
+  CCACHE_MAXSIZE: 2G
 
 jobs:
   build:
@@ -28,6 +29,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve build parameters
+        id: params
+        run: |
+          DEVICE="${{ github.event.inputs.device }}"
+          if [ -z "$DEVICE" ]; then DEVICE="k2-16m"; fi
+          echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
+          CFG_HASH=$(sha256sum "config/$DEVICE.config" | cut -c1-16)
+          echo "cfg_hash=$CFG_HASH" >> "$GITHUB_OUTPUT"
+          echo "Device: $DEVICE  ConfigHash: $CFG_HASH"
 
       - name: Free disk space
         run: |
@@ -51,6 +62,36 @@ jobs:
           cd openwrt
           echo "Upstream commit: $(git log --oneline -1)"
 
+      # ---- 缓存 1：下载的软件包源码（省 ~20 分钟）----
+      - name: Restore download cache
+        id: cache-dl
+        uses: actions/cache/restore@v4
+        with:
+          path: openwrt/dl
+          key: dl-${{ steps.params.outputs.device }}-${{ steps.params.outputs.cfg_hash }}
+          restore-keys: |
+            dl-${{ steps.params.outputs.device }}-
+            dl-
+
+      # ---- 缓存 2：ccache 编译缓存（省 ~35 分钟）----
+      # 注意：OpenWrt 默认把 ccache 放在 $(TOPDIR)/.ccache，即 openwrt/.ccache
+      - name: Restore ccache
+        id: cache-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: openwrt/.ccache
+          key: ccache-${{ steps.params.outputs.device }}-${{ steps.params.outputs.cfg_hash }}
+          restore-keys: |
+            ccache-${{ steps.params.outputs.device }}-
+            ccache-
+
+      - name: Cache status
+        run: |
+          echo "dl cache hit      : ${{ steps.cache-dl.outputs.cache-hit }}"
+          echo "ccache cache hit  : ${{ steps.cache-ccache.outputs.cache-hit }}"
+          du -sh openwrt/dl 2>/dev/null || echo "dl: empty"
+          du -sh openwrt/.ccache 2>/dev/null || echo "ccache: empty"
+
       - name: Apply custom patches
         run: |
           cd openwrt
@@ -67,21 +108,30 @@ jobs:
       - name: Load build config
         run: |
           cd openwrt
-          cp ../config/${{ github.event.inputs.device || 'k2-16m' }}.config .config
+          cp ../config/${{ steps.params.outputs.device }}.config .config
+          # 启用 ccache 并在配置层面指向持久目录
+          sed -i '/^CONFIG_CCACHE=/d' .config
+          echo 'CONFIG_CCACHE=y' >> .config
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
+          echo "=== ccache ==="
+          grep -E '^CONFIG_CCACHE' .config
+          ccache --version | head -1
 
       - name: Download package sources
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s
           find dl -size -1024c -exec rm -f {} \;
+          echo "download dir: $(du -sh dl | cut -f1)"
 
       - name: Compile firmware
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
+          echo "=== ccache stats ==="
+          ccache --show-stats || true
 
       - name: Collect artifacts
         run: |
@@ -91,11 +141,29 @@ jobs:
           cp bin/targets/ramips/mt7620/*.manifest ../output/ 2>/dev/null || true
           cp bin/targets/ramips/mt7620/sha256sums ../output/ 2>/dev/null || true
           cp bin/targets/ramips/mt7620/config.buildinfo ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/feeds.buildinfo ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/profiles.json ../output/ 2>/dev/null || true
+          cp bin/targets/ramips/mt7620/version.buildinfo ../output/ 2>/dev/null || true
           ls -la ../output
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: FanchmWrt-K2-${{ github.event.inputs.device || 'k2-16m' }}
+          name: FanchmWrt-K2-${{ steps.params.outputs.device }}
           path: output/*
           retention-days: 30
+
+      # ---- 保存缓存（只在未命中时写入，避免无谓上传）----
+      - name: Save download cache
+        if: steps.cache-dl.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/dl
+          key: dl-${{ steps.params.outputs.device }}-${{ steps.params.outputs.cfg_hash }}
+
+      - name: Save ccache
+        if: steps.cache-ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/.ccache
+          key: ccache-${{ steps.params.outputs.device }}-${{ steps.params.outputs.cfg_hash }}
