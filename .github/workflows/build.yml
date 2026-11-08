@@ -11,6 +11,16 @@ on:
         options:
           - k2-16m
           - k2-8m
+      use_cache:
+        description: 'Use build cache (dl + ccache, saves ~55min)'
+        required: true
+        default: true
+        type: boolean
+      use_ccache:
+        description: 'Use ccache only (kernel/package object cache, saves ~35min)'
+        required: true
+        default: true
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -38,7 +48,30 @@ jobs:
           echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
           CFG_HASH=$(sha256sum "config/$DEVICE.config" | cut -c1-16)
           echo "cfg_hash=$CFG_HASH" >> "$GITHUB_OUTPUT"
-          echo "Device: $DEVICE  ConfigHash: $CFG_HASH"
+
+          # use_cache 总开关（未提供时默认 true，tag 触发也走缓存）
+          USE_CACHE="${{ github.event.inputs.use_cache }}"
+          if [ -z "$USE_CACHE" ]; then USE_CACHE="true"; fi
+          # use_ccache 细粒度开关
+          USE_CCACHE="${{ github.event.inputs.use_ccache }}"
+          if [ -z "$USE_CCACHE" ]; then USE_CCACHE="$USE_CACHE"; fi
+          # 总开关关闭时，ccache 也强制关闭
+          if [ "$USE_CACHE" != "true" ]; then USE_CCACHE="false"; fi
+
+          echo "use_cache=$USE_CACHE" >> "$GITHUB_OUTPUT"
+          echo "use_ccache=$USE_CCACHE" >> "$GITHUB_OUTPUT"
+          # 下载缓存依赖总开关
+          if [ "$USE_CACHE" = "true" ]; then
+            echo "use_dl=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_dl=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "Device        : $DEVICE"
+          echo "Config hash   : $CFG_HASH"
+          echo "use_cache     : $USE_CACHE"
+          echo "use_dl        : $([ "$USE_CACHE" = "true" ] && echo true || echo false)"
+          echo "use_ccache    : $USE_CCACHE"
 
       - name: Free disk space
         run: |
@@ -65,6 +98,7 @@ jobs:
       # ---- 缓存 1：下载的软件包源码（省 ~20 分钟）----
       - name: Restore download cache
         id: cache-dl
+        if: steps.params.outputs.use_dl == 'true'
         uses: actions/cache/restore@v4
         with:
           path: openwrt/dl
@@ -77,6 +111,7 @@ jobs:
       # 注意：OpenWrt 默认把 ccache 放在 $(TOPDIR)/.ccache，即 openwrt/.ccache
       - name: Restore ccache
         id: cache-ccache
+        if: steps.params.outputs.use_ccache == 'true'
         uses: actions/cache/restore@v4
         with:
           path: openwrt/.ccache
@@ -87,10 +122,23 @@ jobs:
 
       - name: Cache status
         run: |
-          echo "dl cache hit      : ${{ steps.cache-dl.outputs.cache-hit }}"
-          echo "ccache cache hit  : ${{ steps.cache-ccache.outputs.cache-hit }}"
-          du -sh openwrt/dl 2>/dev/null || echo "dl: empty"
-          du -sh openwrt/.ccache 2>/dev/null || echo "ccache: empty"
+          echo "=== Cache switch ==="
+          echo "use_cache  : ${{ steps.params.outputs.use_cache }}"
+          echo "use_dl     : ${{ steps.params.outputs.use_dl }}"
+          echo "use_ccache : ${{ steps.params.outputs.use_ccache }}"
+          echo
+          if [ "${{ steps.params.outputs.use_dl }}" = "true" ]; then
+            echo "dl cache hit     : ${{ steps.cache-dl.outputs.cache-hit }}"
+            du -sh openwrt/dl 2>/dev/null || echo "dl: empty"
+          else
+            echo "dl cache         : disabled"
+          fi
+          if [ "${{ steps.params.outputs.use_ccache }}" = "true" ]; then
+            echo "ccache cache hit : ${{ steps.cache-ccache.outputs.cache-hit }}"
+            du -sh openwrt/.ccache 2>/dev/null || echo "ccache: empty"
+          else
+            echo "ccache cache     : disabled"
+          fi
 
       - name: Apply custom patches
         run: |
@@ -109,14 +157,18 @@ jobs:
         run: |
           cd openwrt
           cp ../config/${{ steps.params.outputs.device }}.config .config
-          # 启用 ccache 并在配置层面指向持久目录
+          # ccache 只在启用时打开
           sed -i '/^CONFIG_CCACHE=/d' .config
-          echo 'CONFIG_CCACHE=y' >> .config
+          if [ "${{ steps.params.outputs.use_ccache }}" = "true" ]; then
+            echo 'CONFIG_CCACHE=y' >> .config
+          else
+            echo '# CONFIG_CCACHE is not set' >> .config
+          fi
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
           echo "=== ccache ==="
-          grep -E '^CONFIG_CCACHE' .config
+          grep -E '^CONFIG_CCACHE' .config || echo "CONFIG_CCACHE not set"
           ccache --version | head -1
 
       - name: Download package sources
@@ -153,16 +205,16 @@ jobs:
           path: output/*
           retention-days: 30
 
-      # ---- 保存缓存（只在未命中时写入，避免无谓上传）----
+      # ---- 保存缓存（只在启用且未命中时写入）----
       - name: Save download cache
-        if: steps.cache-dl.outputs.cache-hit != 'true'
+        if: steps.params.outputs.use_dl == 'true' && steps.cache-dl.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: openwrt/dl
           key: dl-${{ steps.params.outputs.device }}-${{ steps.params.outputs.cfg_hash }}
 
       - name: Save ccache
-        if: steps.cache-ccache.outputs.cache-hit != 'true'
+        if: steps.params.outputs.use_ccache == 'true' && steps.cache-ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: openwrt/.ccache
