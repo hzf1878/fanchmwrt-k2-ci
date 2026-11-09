@@ -84,6 +84,13 @@ CLASH_PAIRS = [
     ('ip-tiny', 'ip-full'),
 ]
 
+# SFE 会绕过 netfilter，导致 TPROXY 失效、代理不生效。
+# 启用 ssr-plus 时关掉 shortcut-fe，改用 nftables flowtable 快速路径。
+SFE_PKGS = [
+    'kmod-shortcut-fe',
+    'luci-app-fwx-fastnat',
+]
+
 
 def ensure_feed(enable: bool) -> None:
     with open(FEEDS_CONF, encoding='utf-8') as fh:
@@ -131,6 +138,12 @@ def configure(enable: bool) -> None:
         cfg = set_option(cfg, f'PACKAGE_{base}', not enable)
         cfg = set_option(cfg, f'PACKAGE_{full}', enable)
 
+    # SFE 与 TPROXY 冲突：启用 ssr-plus 时关闭，改用 nft flowtable
+    # 注意 CONFIG_DEFAULT_<pkg> 是 FanchmWrt 的默认包机制，只关 CONFIG_PACKAGE_ 会被它顶回来
+    for pkg in SFE_PKGS:
+        cfg = set_option(cfg, f'PACKAGE_{pkg}', not enable)
+        cfg = set_option(cfg, f'DEFAULT_{pkg}', not enable)
+
     with open('.config', 'w', encoding='utf-8') as fh:
         fh.write(cfg)
 
@@ -142,6 +155,7 @@ def configure(enable: bool) -> None:
     print(f'  helloworld pkgs : {len(HELLOWORLD_PKGS_OFF)} forced off')
     print(f'  dnsmasq         : {"full" if enable else "tiny"}')
     print(f'  iproute2        : {"full" if enable else "tiny"}')
+    print(f'  SFE (shortcut-fe): {"off (TPROXY needs netfilter)" if enable else "on"}')
 
 
 def main() -> int:
