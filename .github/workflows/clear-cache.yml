@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: '清理哪个设备的缓存（all=全部 / k2-16m / k2-8m）'
+        description: '清理哪个设备的缓存（all=全部 / k2-32m / k2-16m / k2-8m）'
         required: true
         default: 'all'
         type: choice
         options:
           - all
+          - k2-32m
           - k2-16m
           - k2-8m
       cache_type:
@@ -22,9 +23,9 @@ on:
           - dl
           - ccache
       dry_run:
-        description: '仅预览，不实际删除（建议先勾选确认范围）'
+        description: '仅预览，不实际删除（默认开启，确认范围后再取消）'
         required: true
-        default: false
+        default: true
         type: boolean
 
 jobs:
