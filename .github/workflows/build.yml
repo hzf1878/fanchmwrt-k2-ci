@@ -6,7 +6,7 @@ on:
       device:
         description: 'Target device'
         required: true
-        default: 'k2-16m'
+        default: 'k2-8m'
         type: choice
         options:
           - k2-16m
