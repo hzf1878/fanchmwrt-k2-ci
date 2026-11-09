@@ -19,7 +19,7 @@
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `device` | `k2-16m` | 目标设备：`k2-8m` / `k2-16m` / `k2-32m` |
+| `device` | `k2-8m` | 目标设备：`k2-8m` / `k2-16m` / `k2-32m` |
 | `use_cache` | 开 | dl 源码包 + ccache 总开关，省约 55 分钟 |
 | `use_ccache` | 开 | 单独控制 ccache（依赖 use_cache） |
 | `with_xray` | 关 | 加入 xray-core（trojan/VMess/VLESS/SS） |
