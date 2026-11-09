@@ -75,7 +75,7 @@ def configure(enable: bool) -> None:
     # 主包
     cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus', enable)
 
-    # xray 内核由 ff 的 xray-core 包提供，这里只打开 ssr-plus 的 xray 集成
+    # xray 内核由 openwrt/packages 的 xray-core 包提供，这里只打开 ssr-plus 的 xray 集成
     for opt in FORCE_ON:
         cfg = set_option(cfg, f'PACKAGE_luci-app-ssr-plus_{opt}', enable)
 
@@ -86,12 +86,30 @@ def configure(enable: bool) -> None:
     cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus_Nftables_Transparent_Proxy', enable)
     cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus_Iptables_Transparent_Proxy', False)
 
+    # dnsmasq 与 dnsmasq-full 提供相同文件，不能共存。
+    # ssr-plus 的 LUCI_DEPENDS 硬依赖 +dnsmasq-full，所以必须把 dnsmasq 换掉。
+    # 同理 ip-tiny / ip-full 也冲突，ssr-plus 硬依赖 +ip-full。
+    if enable:
+        cfg = set_option(cfg, 'PACKAGE_dnsmasq', False)
+        cfg = set_option(cfg, 'PACKAGE_dnsmasq-full', True)
+        cfg = set_option(cfg, 'PACKAGE_ip-tiny', False)
+        cfg = set_option(cfg, 'PACKAGE_ip-full', True)
+    else:
+        cfg = set_option(cfg, 'PACKAGE_dnsmasq-full', False)
+        cfg = set_option(cfg, 'PACKAGE_dnsmasq', True)
+        cfg = set_option(cfg, 'PACKAGE_ip-full', False)
+        cfg = set_option(cfg, 'PACKAGE_ip-tiny', True)
+
     with open('.config', 'w', encoding='utf-8') as fh:
         fh.write(cfg)
 
     print(f'ssr-plus: {"enabled" if enable else "disabled"}')
     print(f'  INCLUDE_Xray      = {enable}')
     print(f'  other INCLUDE_*   = False')
+    print(f'  dnsmasq           = {"disabled" if enable else "enabled"}')
+    print(f'  dnsmasq-full      = {"enabled" if enable else "disabled"}')
+    print(f'  ip-tiny           = {"disabled" if enable else "enabled"}')
+    print(f'  ip-full           = {"enabled" if enable else "disabled"}')
 
 
 def main() -> int:
