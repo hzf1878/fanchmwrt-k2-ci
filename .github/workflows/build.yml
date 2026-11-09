@@ -189,6 +189,9 @@ jobs:
             BASE_IMG=11469641        # 空固件 sysupgrade
             XRAY_ADD=3670016         # xray ~3.5MB
             SSRPLUS_ADD=6160000      # ssr-plus 其余部分 ~5.9MB
+            TOOLS_ADD=3145728        # with_tools ~3MB
+            EXTRAS_ADD=4194304       # with_extras ~4MB
+            ADBLOCK_ADD=314572       # with_adblock ~0.3MB
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
             if [ "$WITH_SSRPLUS" = "true" ]; then
@@ -203,17 +206,41 @@ jobs:
               WITH_SS_FULL="false"
               echo "调整后：with_xray=false with_ssrplus=false with_ss_full=false"
             else
-              # 没勾 ssr-plus 时，只校验 xray 本身是否放得下
-              if [ "$WITH_XRAY" = "true" ]; then
-                NEED=$((BASE_IMG + XRAY_ADD))
-                echo "=== 16M 空间预算（仅 xray）==="
-                echo "分区上界   : $FW_MAX"
-                echo "预计镜像   : $NEED"
-                echo "余量       : $((FW_MAX - NEED))"
-                if [ "$NEED" -gt "$FW_MAX" ]; then
-                  echo "::warning title=16M 装不下 xray::镜像约 $NEED 字节 > 上界 $FW_MAX。已强制关闭 with_xray。"
-                  WITH_XRAY="false"
+              # 没勾 ssr-plus 时，把其余可选项累加后校验
+              NEED=$BASE_IMG
+              [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
+              [ "$WITH_TOOLS" = "true" ] && NEED=$((NEED + TOOLS_ADD))
+              [ "$WITH_EXTRAS" = "true" ] && NEED=$((NEED + EXTRAS_ADD))
+              [ "$WITH_ADBLOCK" = "true" ] && NEED=$((NEED + ADBLOCK_ADD))
+
+              echo "=== 16M 空间预算 ==="
+              echo "分区上界   : $FW_MAX"
+              echo "预计镜像   : $NEED"
+              echo "余量       : $((FW_MAX - NEED))"
+
+              if [ "$NEED" -gt "$FW_MAX" ]; then
+                # 按体积从大到小依次放弃
+                if [ "$WITH_EXTRAS" = "true" ]; then
+                  echo "::warning title=16M 装不下 with_extras::已强制关闭 with_extras（约 4MB）"
+                  WITH_EXTRAS="false"
+                  NEED=$((NEED - EXTRAS_ADD))
                 fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TOOLS" = "true" ]; then
+                  echo "::warning title=16M 装不下 with_tools::已强制关闭 with_tools（约 3MB）"
+                  WITH_TOOLS="false"
+                  NEED=$((NEED - TOOLS_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_XRAY" = "true" ]; then
+                  echo "::warning title=16M 装不下 xray::已强制关闭 with_xray（约 3.5MB）"
+                  WITH_XRAY="false"
+                  NEED=$((NEED - XRAY_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_ADBLOCK" = "true" ]; then
+                  echo "::warning title=16M 装不下 adblock::已强制关闭 with_adblock"
+                  WITH_ADBLOCK="false"
+                  NEED=$((NEED - ADBLOCK_ADD))
+                fi
+                echo "调整后：xray=$WITH_XRAY tools=$WITH_TOOLS extras=$WITH_EXTRAS adblock=$WITH_ADBLOCK"
               fi
             fi
           fi

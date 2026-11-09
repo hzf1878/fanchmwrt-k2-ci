@@ -57,6 +57,45 @@ with_adblock=true, device=k2-8m       → 强制关闭（规则文件需数 MB�
 with_tools/with_extras=true, device=k2-8m → 强制关闭（可写区仅 320KB）
 ```
 
+### 各设备功能可用性
+
+| 参数 | `k2-8m` | `k2-16m` | `k2-32m` |
+|---|---|---|---|
+| `use_cache` | ✅ | ✅ | ✅ |
+| `use_ccache` | ✅ | ✅ | ✅ |
+| `with_hnat` | ✅ | ✅ | ✅ |
+| `keep_sfe` | ✅ | ✅ | ✅ |
+| `with_xray` | ❌ 强制关闭 | ⚠️ 可用（余约 1.2MB） | ✅ 可用 |
+| `with_adblock` | ❌ 强制关闭 | ✅ 可用 | ✅ 可用 |
+| `with_tools` | ❌ 强制关闭 | ⚠️ 可用（约 3MB，余量吃紧） | ✅ 可用 |
+| `with_extras` | ❌ 强制关闭 | ⚠️ 会被自动关闭（超限时） | ✅ 可用 |
+| `with_ssrplus` | ❌ 强制关闭 | ❌ 强制关闭（超 4.8MB） | ✅ 可用 |
+| `with_ss_full` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用 |
+
+图例：✅ 可用　⚠️ 可用但余量紧张　❌ 会被自动关闭
+
+**`k2-16m` 上的降级顺序**（超限时按体积从大到小依次放弃）：
+
+```
+① 关 with_extras（4MB）
+② 关 with_tools（3MB）
+③ 关 with_xray（3.5MB）
+④ 关 with_adblock（0.3MB）
+```
+
+每次降级都会在日志里输出 `::warning`，说明关了哪项、原本会超多少。
+勾了 `with_ssrplus` 则直接关闭 xray 和 ssr-plus 两项（见上文）。
+
+### 各设备推荐配置
+
+| 用途 | `k2-8m` | `k2-16m` | `k2-32m` |
+|---|---|---|---|
+| 纯路由（最快） | 默认即可 | 默认即可 | 默认即可 |
+| 加广告过滤 | — | + `with_adblock` | + `with_adblock` |
+| 加常用工具 | — | + `with_tools` | + `with_tools` |
+| 跑 trojan | — | + `with_xray`，`keep_sfe` 取消 | + `with_xray` + `with_ssrplus` |
+| 全功能 | — | 放不下 | 全部勾选（约 27MB） |
+
 ## 空间限制（实测数据）
 
 | 设备 | firmware 分区 | 空固件镜像 | 剩余可写区 |
