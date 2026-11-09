@@ -253,6 +253,18 @@ jobs:
           grep -E '^CONFIG_PACKAGE_xray-core' .config || echo "xray-core not in config"
           echo "=== ssr-plus ==="
           grep -E '^CONFIG_PACKAGE_luci-app-ssr-plus' .config || echo "ssr-plus not in config"
+
+          echo "=== 体积相关的包（defconfig 之后）==="
+          for p in mihomo hysteria naiveproxy shadowsocks-rust shadowsocks-libev \
+                   shadowsocksr-libev mosdns chinadns-ng dnsproxy tuic-client upx \
+                   v2raya xray-plugin v2ray-core v2ray-plugin simple-obfs redsocks2 \
+                   shadow-tls dns2socks dns2socks-rust ipt2socks-rs gn tcping; do
+            if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
+              echo "  $p = ON"
+            fi
+          done
+          echo "=== 上面若出现 ON，说明它会被编入固件 ==="
+
           ccache --version | head -1
 
       - name: Download package sources
@@ -265,7 +277,22 @@ jobs:
       - name: Compile firmware
         run: |
           cd openwrt
+
+          # 强制重建 rootfs 与镜像，避免 build_dir 残留导致镜像字节不变
+          rm -rf build_dir/target-*/root-*/
+          rm -rf build_dir/target-*/linux-*/root.squashfs*
+          rm -rf build_dir/target-*/linux-*/tmp
+          rm -rf build_dir/target-*/linux-*/*-kernel.bin
+          rm -rf bin/targets/ramips/mt7620/*.bin
+          rm -rf bin/targets/ramips/mt7620/*.manifest
+          echo "=== cleaned rootfs artifacts ==="
+
           make -j$(nproc) || make -j1 V=s
+
+          echo "=== image size check ==="
+          for f in bin/targets/ramips/mt7620/*sysupgrade.bin; do
+            [ -f "$f" ] && echo "$(stat -c%s "$f")  $(basename "$f")"
+          done
           echo "=== ccache stats ==="
           ccache --show-stats || true
 
