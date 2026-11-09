@@ -42,6 +42,11 @@ on:
         required: true
         default: false
         type: boolean
+      with_adblock:
+        description: '加入 adblock-fast 广告过滤（DNS 层，约 300KB，与代理无冲突）'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -100,6 +105,15 @@ jobs:
 
           KEEP_SFE="${{ github.event.inputs.keep_sfe }}"
           if [ -z "$KEEP_SFE" ]; then KEEP_SFE="false"; fi
+
+          WITH_ADBLOCK="${{ github.event.inputs.with_adblock }}"
+          if [ -z "$WITH_ADBLOCK" ]; then WITH_ADBLOCK="false"; fi
+
+          # 8M 可写区仅 320KB，规则文件放不下
+          if [ "$WITH_ADBLOCK" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
+            echo "::warning title=8M 空间不足::adblock-fast 规则文件需数 MB，k2-8m 可写区仅 320KB，已强制关闭 with_adblock。"
+            WITH_ADBLOCK="false"
+          fi
 
           # 8M：两个都装不下，强制关闭
           if [ "$DEVICE" = "k2-8m" ]; then
@@ -169,6 +183,7 @@ jobs:
           echo "with_ssrplus=$WITH_SSRPLUS" >> "$GITHUB_OUTPUT"
           echo "with_ss_full=$WITH_SS_FULL" >> "$GITHUB_OUTPUT"
           echo "keep_sfe=$KEEP_SFE" >> "$GITHUB_OUTPUT"
+          echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -179,6 +194,7 @@ jobs:
           echo "with_ssrplus  : $WITH_SSRPLUS"
           echo "with_ss_full  : $WITH_SS_FULL"
           echo "keep_sfe      : $KEEP_SFE"
+          echo "with_adblock  : $WITH_ADBLOCK"
 
       - name: Free disk space
         run: |
@@ -330,6 +346,13 @@ jobs:
             python3 ../scripts/configure_ss_full.py disable
           fi
 
+          # DNS 层广告过滤
+          if [ "${{ steps.params.outputs.with_adblock }}" = "true" ]; then
+            python3 ../scripts/configure_adblock.py enable
+          else
+            python3 ../scripts/configure_adblock.py disable
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
@@ -342,6 +365,15 @@ jobs:
 
           echo "=== SS/SSR 内核 ==="
           for p in shadowsocks-rust-sslocal shadowsocksr-libev-ssr-redir shadowsocksr-libev-ssr-local; do
+            if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
+              echo "  $p = ON"
+            else
+              echo "  $p = off"
+            fi
+          done
+
+          echo "=== 广告过滤 ==="
+          for p in adblock-fast luci-app-adblock-fast; do
             if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
               echo "  $p = ON"
             else
