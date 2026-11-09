@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - k2-16m
+          - k2-32m
           - k2-8m
       use_cache:
         description: 'Use build cache (dl + ccache, saves ~55min)'
@@ -81,16 +82,20 @@ jobs:
           WITH_XRAY="${{ github.event.inputs.with_xray }}"
           if [ -z "$WITH_XRAY" ]; then WITH_XRAY="false"; fi
           if [ "$WITH_XRAY" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
-            echo "::warning::xray-core 需要约 1.2MB，k2-8m 的可写区放不下，已自动关闭"
+            echo "::warning::xray-core 需要约 4MB，k2-8m 的可写区放不下，已自动关闭"
             WITH_XRAY="false"
           fi
 
-          # ssr-plus：依赖 xray-core，且仅 16M 可用
+          # ssr-plus：依赖 xray-core，8M 不可用；16M 空间也不足（实测超限 4.8MB）
           WITH_SSRPLUS="${{ github.event.inputs.with_ssrplus }}"
           if [ -z "$WITH_SSRPLUS" ]; then WITH_SSRPLUS="false"; fi
           if [ "$WITH_SSRPLUS" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
-            echo "::warning::luci-app-ssr-plus 约 2MB，k2-8m 放不下，已自动关闭"
+            echo "::warning::luci-app-ssr-plus 约 20MB，k2-8m 放不下，已自动关闭"
             WITH_SSRPLUS="false"
+          fi
+          if [ "$WITH_SSRPLUS" = "true" ] && [ "$DEVICE" = "k2-16m" ]; then
+            echo "::warning::实测 ssr-plus + xray 镜像约 20.3MB，超过 16M 分区上界 15.69MB"
+            echo "::warning::16M 上编出来会没有 sysupgrade.bin，建议改用 k2-32m"
           fi
           if [ "$WITH_SSRPLUS" = "true" ] && [ "$WITH_XRAY" != "true" ]; then
             echo "::warning::ssr-plus 需要 xray-core，已自动开启 with_xray"
@@ -179,8 +184,10 @@ jobs:
         run: |
           cd openwrt
           cp ../patches/mt7620a_phicomm_k2-16m.dts target/linux/ramips/dts/
+          cp ../patches/mt7620a_phicomm_k2-32m.dts target/linux/ramips/dts/
           python3 ../scripts/register_device.py
-          grep -c "phicomm_k2-16m" target/linux/ramips/image/mt7620.mk
+          echo "=== registered devices ==="
+          grep -E "define Device/phicomm_k2-(16m|32m)" target/linux/ramips/image/mt7620.mk
 
       - name: Add third-party feeds
         run: |
