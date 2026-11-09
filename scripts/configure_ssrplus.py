@@ -1,20 +1,37 @@
 #!/usr/bin/env python3
-"""Add helloworld feed and configure luci-app-ssr-plus with minimal INCLUDE set.
+"""Configure luci-app-ssr-plus with a minimal package set.
 
-Run from the OpenWrt source root after feeds have been updated.
+Run from the OpenWrt source root, after `./scripts/feeds install -a`.
+
+Rationale: `feeds install -a` materialises every package from helloworld into
+package/feeds/helloworld/. OpenWrt then enables a number of them by default
+(mihomo, hysteria, naiveproxy, shadowsocks-rust, mosdns, chinadns-ng, ...).
+On an 8/16MB flash device that alone blows the image size by several MB.
+This script forces every helloworld package off except the ones ssr-plus
+actually needs.
 
 Usage:
     python3 configure_ssrplus.py enable
     python3 configure_ssrplus.py disable
 """
-import re
 import sys
 
 FEEDS_CONF = 'feeds.conf.default'
 HELLOWORLD_URL = 'https://github.com/fw876/helloworld.git'
 
-# 只保留 xray 作为代理内核，其余全部关闭以节省空间
-INCLUDE_OPTS = [
+# ssr-plus 的 LUCI_DEPENDS 里写死的运行时依赖，必须打开
+REQUIRED = [
+    'luci-app-ssr-plus',
+    'dns2tcp',
+    'microsocks',
+    'ipt2socks',
+    'lua-neturl',
+]
+
+# ssr-plus 内部的可选 INCLUDE 项：只留 xray
+INCLUDE_ON = ['INCLUDE_Xray']
+
+INCLUDE_OFF = [
     'INCLUDE_ChinaDNS_NG',
     'INCLUDE_MosDNS',
     'INCLUDE_Http_Proxy',
@@ -31,39 +48,59 @@ INCLUDE_OPTS = [
     'INCLUDE_Shadowsocks_Rust_Server',
     'INCLUDE_Shadowsocks_NONE_Client',
     'INCLUDE_Shadowsocks_NONE_Server',
+    'INCLUDE_NONE_V2RAY',
 ]
 
-# 必须关闭的、默认会打开的选项
-FORCE_OFF = INCLUDE_OPTS + ['INCLUDE_NONE_V2RAY']
+# helloworld 里其余所有包，全部显式关闭（体积杀手）
+HELLOWORLD_PKGS_OFF = [
+    'chinadns-ng',
+    'dns2socks',
+    'dns2socks-rust',
+    'dnsproxy',
+    'gn',
+    'hysteria',
+    'ipt2socks-rs',
+    'mihomo',
+    'mosdns',
+    'naiveproxy',
+    'redsocks2',
+    'shadow-tls',
+    'shadowsocks-libev',
+    'shadowsocks-rust',
+    'shadowsocksr-libev',
+    'simple-obfs',
+    'tcping',
+    'tuic-client',
+    'upx',
+    'v2ray-core',
+    'v2ray-plugin',
+    'v2raya',
+    'xray-plugin',
+]
 
-# 必须打开的
-FORCE_ON = ['INCLUDE_Xray']
+# 文件冲突对：替换者 -> 被替换者
+CLASH_PAIRS = [
+    ('dnsmasq', 'dnsmasq-full'),
+    ('ip-tiny', 'ip-full'),
+]
 
 
 def ensure_feed(enable: bool) -> None:
     with open(FEEDS_CONF, encoding='utf-8') as fh:
-        lines = fh.read().splitlines()
-
-    lines = [ln for ln in lines if 'fw876/helloworld' not in ln]
-
+        lines = [ln for ln in fh.read().splitlines() if 'fw876/helloworld' not in ln]
     if enable:
         lines.append(f'src-git helloworld {HELLOWORLD_URL}')
-        print(f'feed: added helloworld')
-    else:
-        print('feed: removed helloworld')
-
     with open(FEEDS_CONF, 'w', encoding='utf-8') as fh:
         fh.write('\n'.join(lines) + '\n')
+    print(f'feed: {"added" if enable else "removed"} helloworld')
 
 
 def set_option(config: str, name: str, value: bool) -> str:
-    """Set CONFIG_<name> to y / not-set, removing any existing definition first."""
     key = f'CONFIG_{name}'
-    out = []
-    for ln in config.splitlines():
-        if ln.startswith(key + '=') or ln.startswith(f'# {key} is not set'):
-            continue
-        out.append(ln)
+    out = [
+        ln for ln in config.splitlines()
+        if not (ln.startswith(key + '=') or ln.startswith(f'# {key} is not set'))
+    ]
     out.append(f'{key}=y' if value else f'# {key} is not set')
     return '\n'.join(out) + '\n'
 
@@ -72,44 +109,39 @@ def configure(enable: bool) -> None:
     with open('.config', encoding='utf-8') as fh:
         cfg = fh.read()
 
-    # 主包
-    cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus', enable)
+    for pkg in REQUIRED:
+        cfg = set_option(cfg, f'PACKAGE_{pkg}', enable)
 
-    # xray 内核由 openwrt/packages 的 xray-core 包提供，这里只打开 ssr-plus 的 xray 集成
-    for opt in FORCE_ON:
+    for opt in INCLUDE_ON:
         cfg = set_option(cfg, f'PACKAGE_luci-app-ssr-plus_{opt}', enable)
 
-    for opt in FORCE_OFF:
+    for opt in INCLUDE_OFF:
         cfg = set_option(cfg, f'PACKAGE_luci-app-ssr-plus_{opt}', False)
 
-    # 透明代理后端：选 nftables（当前固件用 firewall4）
+    # 透明代理后端：firewall4 -> nftables
     cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus_Nftables_Transparent_Proxy', enable)
     cfg = set_option(cfg, 'PACKAGE_luci-app-ssr-plus_Iptables_Transparent_Proxy', False)
 
-    # dnsmasq 与 dnsmasq-full 提供相同文件，不能共存。
-    # ssr-plus 的 LUCI_DEPENDS 硬依赖 +dnsmasq-full，所以必须把 dnsmasq 换掉。
-    # 同理 ip-tiny / ip-full 也冲突，ssr-plus 硬依赖 +ip-full。
-    if enable:
-        cfg = set_option(cfg, 'PACKAGE_dnsmasq', False)
-        cfg = set_option(cfg, 'PACKAGE_dnsmasq-full', True)
-        cfg = set_option(cfg, 'PACKAGE_ip-tiny', False)
-        cfg = set_option(cfg, 'PACKAGE_ip-full', True)
-    else:
-        cfg = set_option(cfg, 'PACKAGE_dnsmasq-full', False)
-        cfg = set_option(cfg, 'PACKAGE_dnsmasq', True)
-        cfg = set_option(cfg, 'PACKAGE_ip-full', False)
-        cfg = set_option(cfg, 'PACKAGE_ip-tiny', True)
+    # helloworld 的其余包一律关闭
+    for pkg in HELLOWORLD_PKGS_OFF:
+        cfg = set_option(cfg, f'PACKAGE_{pkg}', False)
+
+    # 文件冲突：ssr-plus 依赖 full 版，必须换掉 tiny 版
+    for base, full in CLASH_PAIRS:
+        cfg = set_option(cfg, f'PACKAGE_{base}', not enable)
+        cfg = set_option(cfg, f'PACKAGE_{full}', enable)
 
     with open('.config', 'w', encoding='utf-8') as fh:
         fh.write(cfg)
 
-    print(f'ssr-plus: {"enabled" if enable else "disabled"}')
-    print(f'  INCLUDE_Xray      = {enable}')
-    print(f'  other INCLUDE_*   = False')
-    print(f'  dnsmasq           = {"disabled" if enable else "enabled"}')
-    print(f'  dnsmasq-full      = {"enabled" if enable else "disabled"}')
-    print(f'  ip-tiny           = {"disabled" if enable else "enabled"}')
-    print(f'  ip-full           = {"enabled" if enable else "disabled"}')
+    state = 'enabled' if enable else 'disabled'
+    print(f'ssr-plus: {state}')
+    print(f'  required pkgs   : {", ".join(REQUIRED) if enable else "-"}')
+    print(f'  INCLUDE_Xray    : {enable}')
+    print(f'  other INCLUDE_* : off')
+    print(f'  helloworld pkgs : {len(HELLOWORLD_PKGS_OFF)} forced off')
+    print(f'  dnsmasq         : {"full" if enable else "tiny"}')
+    print(f'  iproute2        : {"full" if enable else "tiny"}')
 
 
 def main() -> int:
