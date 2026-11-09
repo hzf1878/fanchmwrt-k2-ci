@@ -40,7 +40,7 @@ on:
       keep_sfe:
         description: '保留 SFE 加速（默认在装 ssr-plus 时关闭，因与 TPROXY 冲突；保留需自行在 fastnat 排除代理流量）'
         required: true
-        default: false
+        default: true
         type: boolean
       with_adblock:
         description: '加入 adblock-fast 广告过滤（DNS 层，约 300KB，与代理无冲突）'
