@@ -9,9 +9,9 @@ on:
         default: 'k2-8m'
         type: choice
         options:
+          - k2-8m
           - k2-16m
           - k2-32m
-          - k2-8m
       use_cache:
         description: '使用编译缓存：源码包 + ccache，省约 55 分钟'
         required: true
