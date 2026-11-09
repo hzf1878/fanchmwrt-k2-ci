@@ -103,7 +103,7 @@ jobs:
             WITH_XRAY="true"
           fi
 
-          # 16M：按实测体积算账，超限直接终止
+          # 16M：按实测体积算账，装不下就强制关闭（不中断编译）
           if [ "$DEVICE" = "k2-16m" ]; then
             FW_MAX=16449536          # 0xfb0000
             BASE_IMG=11469641        # 空固件 sysupgrade
@@ -120,13 +120,19 @@ jobs:
             echo "余量       : $((FW_MAX - NEED))"
 
             if [ "$NEED" -gt "$FW_MAX" ]; then
-              {
-                echo "::error title=16M 装不下此组合::预计镜像 $NEED 字节 > 分区上界 $FW_MAX 字节（超出 $((NEED - FW_MAX)) 字节）。"
-                echo "::error::xray-core 约 +3.5MB，ssr-plus 额外约 +5.9MB，16M 无法容纳。"
-                echo "::error::请改用 device=k2-32m（需换 W25Q256 芯片），或取消 with_ssrplus。"
-              }
-              echo "预计镜像 $NEED > 上界 $FW_MAX，终止编译（避免产出无法刷入的固件）"
-              exit 1
+              # ssr-plus 是超限主因，先关它
+              if [ "$WITH_SSRPLUS" = "true" ]; then
+                echo "::warning title=16M 装不下 ssr-plus::镜像约 $NEED 字节 > 上界 $FW_MAX 字节（超 $((NEED - FW_MAX))）。已强制关闭 with_ssrplus，保留 with_xray。"
+                WITH_SSRPLUS="false"
+                NEED=$((BASE_IMG))
+                [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
+              fi
+              # 关掉 ssr-plus 仍超限，则连 xray 一起关
+              if [ "$NEED" -gt "$FW_MAX" ]; then
+                echo "::warning title=16M 装不下 xray::镜像约 $NEED 字节 > 上界 $FW_MAX。已强制关闭 with_xray。"
+                WITH_XRAY="false"
+              fi
+              echo "调整后：with_xray=$WITH_XRAY with_ssrplus=$WITH_SSRPLUS"
             fi
           fi
 
