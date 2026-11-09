@@ -78,28 +78,56 @@ jobs:
             echo "use_dl=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # xray：默认不装；8M 设备强制关闭（空间不够）
+          # xray：默认不装
           WITH_XRAY="${{ github.event.inputs.with_xray }}"
           if [ -z "$WITH_XRAY" ]; then WITH_XRAY="false"; fi
-          if [ "$WITH_XRAY" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
-            echo "::warning::xray-core 需要约 4MB，k2-8m 的可写区放不下，已自动关闭"
-            WITH_XRAY="false"
-          fi
 
-          # ssr-plus：依赖 xray-core，8M 不可用；16M 空间也不足（实测超限 4.8MB）
           WITH_SSRPLUS="${{ github.event.inputs.with_ssrplus }}"
           if [ -z "$WITH_SSRPLUS" ]; then WITH_SSRPLUS="false"; fi
-          if [ "$WITH_SSRPLUS" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
-            echo "::warning::luci-app-ssr-plus 约 20MB，k2-8m 放不下，已自动关闭"
-            WITH_SSRPLUS="false"
+
+          # 8M：两个都装不下，强制关闭
+          if [ "$DEVICE" = "k2-8m" ]; then
+            if [ "$WITH_XRAY" = "true" ]; then
+              echo "::warning::xray-core 二进制 4.3MB，k2-8m 可写区仅 320KB，已强制关闭"
+              WITH_XRAY="false"
+            fi
+            if [ "$WITH_SSRPLUS" = "true" ]; then
+              echo "::warning::luci-app-ssr-plus 需 xray 且总增量约 9MB，k2-8m 放不下，已强制关闭"
+              WITH_SSRPLUS="false"
+            fi
           fi
-          if [ "$WITH_SSRPLUS" = "true" ] && [ "$DEVICE" = "k2-16m" ]; then
-            echo "::warning::实测 ssr-plus + xray 镜像约 20.3MB，超过 16M 分区上界 15.69MB"
-            echo "::warning::16M 上编出来会没有 sysupgrade.bin，建议改用 k2-32m"
-          fi
+
+          # ssr-plus 依赖 xray
           if [ "$WITH_SSRPLUS" = "true" ] && [ "$WITH_XRAY" != "true" ]; then
-            echo "::warning::ssr-plus 需要 xray-core，已自动开启 with_xray"
+            echo "with_ssrplus 需要 xray-core，自动开启 with_xray"
             WITH_XRAY="true"
+          fi
+
+          # 16M：按实测体积算账，超限直接终止
+          if [ "$DEVICE" = "k2-16m" ]; then
+            FW_MAX=16449536          # 0xfb0000
+            BASE_IMG=11469641        # 空固件 sysupgrade
+            XRAY_ADD=3670016         # xray ~3.5MB
+            SSRPLUS_ADD=6160000      # ssr-plus 其余部分 ~5.9MB
+
+            NEED=$BASE_IMG
+            [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
+            [ "$WITH_SSRPLUS" = "true" ] && NEED=$((NEED + SSRPLUS_ADD))
+
+            echo "=== 16M 空间预算 ==="
+            echo "分区上界   : $FW_MAX"
+            echo "预计镜像   : $NEED"
+            echo "余量       : $((FW_MAX - NEED))"
+
+            if [ "$NEED" -gt "$FW_MAX" ]; then
+              {
+                echo "::error title=16M 装不下此组合::预计镜像 $NEED 字节 > 分区上界 $FW_MAX 字节（超出 $((NEED - FW_MAX)) 字节）。"
+                echo "::error::xray-core 约 +3.5MB，ssr-plus 额外约 +5.9MB，16M 无法容纳。"
+                echo "::error::请改用 device=k2-32m（需换 W25Q256 芯片），或取消 with_ssrplus。"
+              }
+              echo "预计镜像 $NEED > 上界 $FW_MAX，终止编译（避免产出无法刷入的固件）"
+              exit 1
+            fi
           fi
 
           echo "with_xray=$WITH_XRAY" >> "$GITHUB_OUTPUT"
