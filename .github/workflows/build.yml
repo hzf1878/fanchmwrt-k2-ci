@@ -42,6 +42,11 @@ on:
         required: true
         default: true
         type: boolean
+      with_hnat:
+        description: '加入 HNAT/fastnat 加速界面（默认开启）。MT7620A 无硬件引擎，实际是 SFE+flowtable 软件快速路径'
+        required: true
+        default: true
+        type: boolean
       with_adblock:
         description: '加入 adblock-fast 广告过滤（DNS 层，约 300KB，与代理无冲突）'
         required: true
@@ -106,6 +111,9 @@ jobs:
           KEEP_SFE="${{ github.event.inputs.keep_sfe }}"
           if [ -z "$KEEP_SFE" ]; then KEEP_SFE="false"; fi
 
+          WITH_HNAT="${{ github.event.inputs.with_hnat }}"
+          if [ -z "$WITH_HNAT" ]; then WITH_HNAT="true"; fi
+
           WITH_ADBLOCK="${{ github.event.inputs.with_adblock }}"
           if [ -z "$WITH_ADBLOCK" ]; then WITH_ADBLOCK="false"; fi
 
@@ -131,6 +139,12 @@ jobs:
           if [ "$WITH_SSRPLUS" = "true" ] && [ "$WITH_XRAY" != "true" ]; then
             echo "with_ssrplus 需要 xray-core，自动开启 with_xray"
             WITH_XRAY="true"
+          fi
+
+          # fastnat 面板依赖 SFE 内核模块。若装了 ssr-plus 且 keep_sfe=false，
+          # configure_ssrplus.py 会关掉 kmod-shortcut-fe，此时面板没有可管的模块
+          if [ "$WITH_HNAT" = "true" ] && [ "$WITH_SSRPLUS" = "true" ] && [ "$KEEP_SFE" != "true" ]; then
+            echo "::warning title=fastnat 面板将无内核模块可管::已装 ssr-plus 且 keep_sfe=false，SFE 会被关闭。with_hnat 仍保留面板，但其中的 SFE 开关不可用；如需完整加速请勾选 keep_sfe。"
           fi
 
           # with_ss_full 依赖 with_ssrplus（内核无法单独使用）
@@ -183,6 +197,7 @@ jobs:
           echo "with_ssrplus=$WITH_SSRPLUS" >> "$GITHUB_OUTPUT"
           echo "with_ss_full=$WITH_SS_FULL" >> "$GITHUB_OUTPUT"
           echo "keep_sfe=$KEEP_SFE" >> "$GITHUB_OUTPUT"
+          echo "with_hnat=$WITH_HNAT" >> "$GITHUB_OUTPUT"
           echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
@@ -194,6 +209,7 @@ jobs:
           echo "with_ssrplus  : $WITH_SSRPLUS"
           echo "with_ss_full  : $WITH_SS_FULL"
           echo "keep_sfe      : $KEEP_SFE"
+          echo "with_hnat     : $WITH_HNAT"
           echo "with_adblock  : $WITH_ADBLOCK"
 
       - name: Free disk space
@@ -353,6 +369,14 @@ jobs:
             python3 ../scripts/configure_adblock.py disable
           fi
 
+          # HNAT/fastnat 界面：必须在 configure_ssrplus.py 之后执行，
+          # 后者在关 SFE 时会一并关掉 luci-app-fwx-fastnat
+          if [ "${{ steps.params.outputs.with_hnat }}" = "true" ]; then
+            python3 ../scripts/configure_fastnat.py enable
+          else
+            python3 ../scripts/configure_fastnat.py disable
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
@@ -381,8 +405,8 @@ jobs:
             fi
           done
 
-          echo "=== SFE 加速 ==="
-          for p in kmod-shortcut-fe luci-app-fwx-fastnat; do
+          echo "=== HNAT/SFE 加速 ==="
+          for p in kmod-shortcut-fe kmod-nf-flow kmod-nft-offload luci-app-fwx-fastnat; do
             if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
               echo "  $p = ON"
             else
