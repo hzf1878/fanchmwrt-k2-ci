@@ -1,4 +1,4 @@
-name: Cleanup
+name: 清理（缓存/产物/运行记录）
 
 on:
   workflow_dispatch:

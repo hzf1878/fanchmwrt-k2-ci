@@ -1,10 +1,10 @@
-name: Clear build caches
+name: 清理编译缓存
 
 on:
   workflow_dispatch:
     inputs:
       device:
-        description: 'Target device to clear (all / k2-16m / k2-8m)'
+        description: '清理哪个设备的缓存（all=全部 / k2-16m / k2-8m）'
         required: true
         default: 'all'
         type: choice
@@ -13,7 +13,7 @@ on:
           - k2-16m
           - k2-8m
       cache_type:
-        description: 'Which cache to clear (all / dl / ccache)'
+        description: '清理哪类缓存（all=全部 / dl=源码包 / ccache=编译缓存）'
         required: true
         default: 'all'
         type: choice
@@ -22,7 +22,7 @@ on:
           - dl
           - ccache
       dry_run:
-        description: 'Dry run (only list, do not delete)'
+        description: '仅预览，不实际删除（建议先勾选确认范围）'
         required: true
         default: false
         type: boolean
@@ -35,17 +35,17 @@ jobs:
       contents: read
 
     steps:
-      - name: Resolve parameters
+      - name: 解析参数
         id: params
         run: |
           echo "device=${{ inputs.device }}" >> "$GITHUB_OUTPUT"
           echo "ctype=${{ inputs.cache_type }}" >> "$GITHUB_OUTPUT"
           echo "dry=${{ inputs.dry_run }}" >> "$GITHUB_OUTPUT"
-          echo "Device  : ${{ inputs.device }}"
-          echo "Type    : ${{ inputs.cache_type }}"
-          echo "Dry run : ${{ inputs.dry_run }}"
+          echo "设备     : ${{ inputs.device }}"
+          echo "类型     : ${{ inputs.cache_type }}"
+          echo "仅预览   : ${{ inputs.dry_run }}"
 
-      - name: Warn if a build is running
+      - name: 检查是否有编译进行中
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -60,7 +60,7 @@ jobs:
             echo "没有正在进行的编译，可以安全清除。"
           fi
 
-      - name: List caches before
+      - name: 清理前的缓存列表
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -73,7 +73,7 @@ jobs:
             --jq 'if (.actions_caches | length) == 0 then "0" else ([.actions_caches[].size_in_bytes] | add) end' \
             | awk '{printf "合计: %.1f MB\n", $1/1048576}'
 
-      - name: Delete caches
+      - name: 执行删除
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEVICE: ${{ inputs.device }}
@@ -147,7 +147,7 @@ jobs:
             echo "已删除 $DELETED 条缓存"
           fi
 
-      - name: List caches after
+      - name: 清理后的缓存列表
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -161,7 +161,7 @@ jobs:
             --jq 'if (.actions_caches | length) == 0 then "0" else ([.actions_caches[].size_in_bytes] | add) end' \
             | awk '{printf "剩余合计: %.1f MB\n", $1/1048576}'
 
-      - name: Summary
+      - name: 汇总
         if: always()
         run: |
           {

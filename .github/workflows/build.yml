@@ -1,4 +1,4 @@
-name: Build FanchmWrt for Phicomm K2
+name: 编译斐讯 K2 固件
 
 on:
   workflow_dispatch:
