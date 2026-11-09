@@ -23,12 +23,12 @@ on:
         default: true
         type: boolean
       with_xray:
-        description: 'Include xray-core (trojan/VMess/VLESS/SS, ~1.2MB, needs 16M flash)'
+        description: 'Include xray-core (trojan/VMess/VLESS/SS). Binary 4.3MB, ~3.5MB in image. Needs 32M.'
         required: true
         default: false
         type: boolean
       with_ssrplus:
-        description: 'Include luci-app-ssr-plus GUI (needs with_xray, ~2MB, 16M flash only)'
+        description: 'Include luci-app-ssr-plus GUI (auto-enables xray). Adds ~9MB total. 32M ONLY - will not fit in 16M.'
         required: true
         default: false
         type: boolean

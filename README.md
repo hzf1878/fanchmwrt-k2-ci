@@ -19,21 +19,48 @@
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `device` | `k2-16m` | 目标设备 |
+| `device` | `k2-16m` | 目标设备：`k2-8m` / `k2-16m` / `k2-32m` |
 | `use_cache` | 开 | dl 源码包 + ccache 总开关，省约 55 分钟 |
 | `use_ccache` | 开 | 单独控制 ccache（依赖 use_cache） |
-| `with_xray` | 关 | 加入 xray-core（trojan/VMess/VLESS/SS），约 1.2MB |
-| `with_ssrplus` | 关 | 加入 luci-app-ssr-plus 图形界面，约 2MB |
+| `with_xray` | 关 | 加入 xray-core（trojan/VMess/VLESS/SS） |
+| `with_ssrplus` | 关 | 加入 luci-app-ssr-plus 图形界面 |
 
 `with_ssrplus` 会自动开启 `with_xray`，因为 ssr-plus 需要一个代理内核。
-`k2-8m` 会自动关闭这两个选项（8MB flash 空间不够）。
+
+## 各设备的空间限制（实测，非估算）
+
+| 设备 | firmware 分区 | 空固件镜像 | 剩余可写区 |
+|---|---|---|---|
+| `k2-8m` | 7.87 MB | 7.34 MB | **约 0.32 MB** |
+| `k2-16m` | 15.69 MB | 10.94 MB | **约 4.75 MB** |
+| `k2-32m` | 31.69 MB | 10.94 MB | **约 20.75 MB** |
+
+### 代理功能需要多少空间（实测）
+
+| 组合 | 镜像增量 | 总镜像 | 能否装进 16M |
+|---|---|---|---|
+| 仅 `with_xray` | 约 3.5 MB | 约 14.4 MB | 勉强，可写区剩约 1.2MB |
+| `with_xray` + `with_ssrplus` | **约 9.4 MB** | **约 20.3 MB** | ❌ **超出 4.8MB** |
+
+**关键结论**：
+
+- `with_ssrplus` **只能在 `k2-32m` 上使用**。在 `k2-16m` 上编出来的镜像会超限，
+  `make` 会丢弃 `squashfs-sysupgrade.bin`，产物里只剩 `initramfs-kernel.bin`——
+  那个不能刷进 flash。
+- `k2-8m` 上这两个选项会被自动强制关闭。
+- 在 `k2-16m` 上勾选 `with_ssrplus` 只会得到一条 warning，编译仍会继续，但结果不可用。
+
 
 ## 支持的设备
 
-| 配置 | 设备 | Flash | 可写区 |
-|---|---|---|---|
-| `k2-16m` | Phicomm K2 (16M flash mod) | 16MB | 约 4.7MB |
-| `k2-8m` | Phicomm K2 v22.4 or older | 8MB | 约 320KB |
+| 配置 | 设备 | Flash | 芯片 | 可写区 |
+|---|---|---|---|---|
+| `k2-8m` | Phicomm K2 v22.4 or older | 8MB | 原装 W25Q64 | 约 320KB |
+| `k2-16m` | Phicomm K2 (16M flash mod) | 16MB | W25Q128 | 约 4.7MB |
+| `k2-32m` | Phicomm K2 (32M flash mod) | 32MB | W25Q256 | 约 20.7MB |
+
+16M / 32M 是换芯片后的自定义变体，需要改分区表，对应 DTS 见 `patches/`。
+前提是使用 Breed 作为 bootloader，原厂 U-Boot 对大容量芯片支持不可靠。
 
 ## 目录结构
 
@@ -94,7 +121,11 @@ workflow 已自动处理这一点。
 - K2 只有 64MB 内存，跑满 LuCI 后余量紧张
 - 8MB 版 JFFS2 需要至少 5 个 64KB 块（约 320KB）才能挂载，低于此值
   overlay 会退化到 `/tmp/root` 导致配置不保存
-- 16MB flash 装 `luci-app-ssr-plus` 会接近饱和，装之前先算好剩余空间
+- **16MB 装不了 ssr-plus**：实测镜像 20.3MB，超出 15.69MB 分区上界 4.8MB。
+  `make` 会丢弃超限的 sysupgrade 镜像，产物里只剩 initramfs（不可刷）
+- 换大容量芯片后如果仍用原厂 U-Boot，可能无法识别新容量，建议刷 Breed
+- `kmod-shortcut-fe` 硬件加速与透明代理冲突：代理流量需从 flowtable 排除，
+  否则 TPROXY 规则不生效（表现为直连正常、走代理不通）
 
 ## 许可证
 
