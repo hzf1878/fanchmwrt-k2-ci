@@ -32,6 +32,11 @@ on:
         required: true
         default: false
         type: boolean
+      with_ss_full:
+        description: '额外加入 Shadowsocks / ShadowsocksR 内核（需 with_ssrplus + 32M，约 7MB，首次编译 Rust 多约 50 分钟）'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -85,6 +90,9 @@ jobs:
           WITH_SSRPLUS="${{ github.event.inputs.with_ssrplus }}"
           if [ -z "$WITH_SSRPLUS" ]; then WITH_SSRPLUS="false"; fi
 
+          WITH_SS_FULL="${{ github.event.inputs.with_ss_full }}"
+          if [ -z "$WITH_SS_FULL" ]; then WITH_SS_FULL="false"; fi
+
           # 8M：两个都装不下，强制关闭
           if [ "$DEVICE" = "k2-8m" ]; then
             if [ "$WITH_XRAY" = "true" ]; then
@@ -101,6 +109,17 @@ jobs:
           if [ "$WITH_SSRPLUS" = "true" ] && [ "$WITH_XRAY" != "true" ]; then
             echo "with_ssrplus 需要 xray-core，自动开启 with_xray"
             WITH_XRAY="true"
+          fi
+
+          # with_ss_full 依赖 with_ssrplus（内核无法单独使用）
+          if [ "$WITH_SS_FULL" = "true" ] && [ "$WITH_SSRPLUS" != "true" ]; then
+            echo "with_ss_full 需要 ssr-plus 界面，已自动关闭"
+            WITH_SS_FULL="false"
+          fi
+          # 仅 32M 放得下 SS/SSR 内核
+          if [ "$WITH_SS_FULL" = "true" ] && [ "$DEVICE" != "k2-32m" ]; then
+            echo "::warning title=SS/SSR 内核仅 32M 可用::$DEVICE 分区放不下约 7MB 的 SS/SSR 内核，已强制关闭 with_ss_full。"
+            WITH_SS_FULL="false"
           fi
 
           # 16M：按实测体积算账，装不下就强制关闭（不中断编译）
@@ -120,7 +139,8 @@ jobs:
               echo "::warning title=16M 装不下 ssr-plus::预计镜像 $NEED 字节 > 上界 $FW_MAX 字节（超 $((NEED - FW_MAX))）。已同时关闭 with_ssrplus 与 with_xray，编出的是基础固件。要图形代理请用 device=k2-32m。"
               WITH_SSRPLUS="false"
               WITH_XRAY="false"
-              echo "调整后：with_xray=false with_ssrplus=false"
+              WITH_SS_FULL="false"
+              echo "调整后：with_xray=false with_ssrplus=false with_ss_full=false"
             else
               # 没勾 ssr-plus 时，只校验 xray 本身是否放得下
               if [ "$WITH_XRAY" = "true" ]; then
@@ -139,6 +159,7 @@ jobs:
 
           echo "with_xray=$WITH_XRAY" >> "$GITHUB_OUTPUT"
           echo "with_ssrplus=$WITH_SSRPLUS" >> "$GITHUB_OUTPUT"
+          echo "with_ss_full=$WITH_SS_FULL" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -147,6 +168,7 @@ jobs:
           echo "use_ccache    : $USE_CCACHE"
           echo "with_xray     : $WITH_XRAY"
           echo "with_ssrplus  : $WITH_SSRPLUS"
+          echo "with_ss_full  : $WITH_SS_FULL"
 
       - name: Free disk space
         run: |
@@ -286,6 +308,14 @@ jobs:
             python3 ../scripts/configure_ssrplus.py disable
           fi
 
+          # SS/SSR 内核：必须在 configure_ssrplus.py 之后执行，
+          # 否则会被它 INCLUDE_OFF 里的 Shadowsocks 项覆盖回关闭
+          if [ "${{ steps.params.outputs.with_ss_full }}" = "true" ]; then
+            python3 ../scripts/configure_ss_full.py enable
+          else
+            python3 ../scripts/configure_ss_full.py disable
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
@@ -295,6 +325,15 @@ jobs:
           grep -E '^CONFIG_PACKAGE_xray-core' .config || echo "xray-core not in config"
           echo "=== ssr-plus ==="
           grep -E '^CONFIG_PACKAGE_luci-app-ssr-plus' .config || echo "ssr-plus not in config"
+
+          echo "=== SS/SSR 内核 ==="
+          for p in shadowsocks-rust-sslocal shadowsocksr-libev-ssr-redir shadowsocksr-libev-ssr-local; do
+            if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
+              echo "  $p = ON"
+            else
+              echo "  $p = off"
+            fi
+          done
 
           echo "=== 体积相关的包（defconfig 之后）==="
           for p in mihomo hysteria naiveproxy shadowsocks-rust shadowsocks-libev \
@@ -354,7 +393,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_ssrplus == 'true' && '-ssrplus' || (steps.params.outputs.with_xray == 'true' && '-xray' || '') }}
+          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_ss_full == 'true' && '-full' || (steps.params.outputs.with_ssrplus == 'true' && '-ssrplus' || (steps.params.outputs.with_xray == 'true' && '-xray' || '')) }}
           path: output/*
           retention-days: 30
 
