@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: 'Target device'
+        description: '目标设备（8M 原装 / 16M 换芯 / 32M 换芯）'
         required: true
         default: 'k2-8m'
         type: choice
@@ -13,22 +13,22 @@ on:
           - k2-32m
           - k2-8m
       use_cache:
-        description: 'Use build cache (dl + ccache, saves ~55min)'
+        description: '使用编译缓存：源码包 + ccache，省约 55 分钟'
         required: true
         default: true
         type: boolean
       use_ccache:
-        description: 'Use ccache only (kernel/package object cache, saves ~35min)'
+        description: '仅使用 ccache（编译中间产物），省约 35 分钟'
         required: true
         default: true
         type: boolean
       with_xray:
-        description: 'Include xray-core (trojan/VMess/VLESS/SS). Binary 4.3MB, ~3.5MB in image. Needs 32M.'
+        description: '加入 xray-core（trojan/VMess/VLESS/SS，占约 3.5MB）。16M/32M 可用，8M 空间不足会自动关闭'
         required: true
         default: false
         type: boolean
       with_ssrplus:
-        description: 'Include luci-app-ssr-plus GUI (auto-enables xray). Adds ~9MB total. 32M ONLY - will not fit in 16M.'
+        description: '加入 luci-app-ssr-plus 图形界面（自动带 xray，占约 9MB）。仅 32M 可用；16M 勾选会同时关闭 xray 和 ssr-plus'
         required: true
         default: false
         type: boolean
