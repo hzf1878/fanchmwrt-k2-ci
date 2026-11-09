@@ -110,29 +110,30 @@ jobs:
             XRAY_ADD=3670016         # xray ~3.5MB
             SSRPLUS_ADD=6160000      # ssr-plus 其余部分 ~5.9MB
 
-            NEED=$BASE_IMG
-            [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
-            [ "$WITH_SSRPLUS" = "true" ] && NEED=$((NEED + SSRPLUS_ADD))
-
-            echo "=== 16M 空间预算 ==="
-            echo "分区上界   : $FW_MAX"
-            echo "预计镜像   : $NEED"
-            echo "余量       : $((FW_MAX - NEED))"
-
-            if [ "$NEED" -gt "$FW_MAX" ]; then
-              # ssr-plus 是超限主因，先关它
-              if [ "$WITH_SSRPLUS" = "true" ]; then
-                echo "::warning title=16M 装不下 ssr-plus::镜像约 $NEED 字节 > 上界 $FW_MAX 字节（超 $((NEED - FW_MAX))）。已强制关闭 with_ssrplus，保留 with_xray。"
-                WITH_SSRPLUS="false"
-                NEED=$((BASE_IMG))
-                [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
+            # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
+            if [ "$WITH_SSRPLUS" = "true" ]; then
+              NEED=$((BASE_IMG + XRAY_ADD + SSRPLUS_ADD))
+              echo "=== 16M 空间预算 ==="
+              echo "分区上界   : $FW_MAX"
+              echo "预计镜像   : $NEED"
+              echo "超出       : $((NEED - FW_MAX))"
+              echo "::warning title=16M 装不下 ssr-plus::预计镜像 $NEED 字节 > 上界 $FW_MAX 字节（超 $((NEED - FW_MAX))）。已同时关闭 with_ssrplus 与 with_xray，编出的是基础固件。要图形代理请用 device=k2-32m。"
+              WITH_SSRPLUS="false"
+              WITH_XRAY="false"
+              echo "调整后：with_xray=false with_ssrplus=false"
+            else
+              # 没勾 ssr-plus 时，只校验 xray 本身是否放得下
+              if [ "$WITH_XRAY" = "true" ]; then
+                NEED=$((BASE_IMG + XRAY_ADD))
+                echo "=== 16M 空间预算（仅 xray）==="
+                echo "分区上界   : $FW_MAX"
+                echo "预计镜像   : $NEED"
+                echo "余量       : $((FW_MAX - NEED))"
+                if [ "$NEED" -gt "$FW_MAX" ]; then
+                  echo "::warning title=16M 装不下 xray::镜像约 $NEED 字节 > 上界 $FW_MAX。已强制关闭 with_xray。"
+                  WITH_XRAY="false"
+                fi
               fi
-              # 关掉 ssr-plus 仍超限，则连 xray 一起关
-              if [ "$NEED" -gt "$FW_MAX" ]; then
-                echo "::warning title=16M 装不下 xray::镜像约 $NEED 字节 > 上界 $FW_MAX。已强制关闭 with_xray。"
-                WITH_XRAY="false"
-              fi
-              echo "调整后：with_xray=$WITH_XRAY with_ssrplus=$WITH_SSRPLUS"
             fi
           fi
 
