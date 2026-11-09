@@ -112,7 +112,7 @@ def set_option(config: str, name: str, value: bool) -> str:
     return '\n'.join(out) + '\n'
 
 
-def configure(enable: bool) -> None:
+def configure(enable: bool, keep_sfe: bool = False) -> None:
     with open('.config', encoding='utf-8') as fh:
         cfg = fh.read()
 
@@ -138,11 +138,13 @@ def configure(enable: bool) -> None:
         cfg = set_option(cfg, f'PACKAGE_{base}', not enable)
         cfg = set_option(cfg, f'PACKAGE_{full}', enable)
 
-    # SFE 与 TPROXY 冲突：启用 ssr-plus 时关闭，改用 nft flowtable
-    # 注意 CONFIG_DEFAULT_<pkg> 是 FanchmWrt 的默认包机制，只关 CONFIG_PACKAGE_ 会被它顶回来
+    # SFE 与 TPROXY 冲突：默认在启用 ssr-plus 时关闭，改用 nft flowtable。
+    # 可用 keep_sfe 保留，此时需自行在 fastnat 里排除代理流量。
+    # 注意 CONFIG_DEFAULT_<pkg> 是 FanchmWrt 的默认包机制，只关 CONFIG_PACKAGE_ 会被它顶回来。
+    sfe_on = (not enable) or keep_sfe
     for pkg in SFE_PKGS:
-        cfg = set_option(cfg, f'PACKAGE_{pkg}', not enable)
-        cfg = set_option(cfg, f'DEFAULT_{pkg}', not enable)
+        cfg = set_option(cfg, f'PACKAGE_{pkg}', sfe_on)
+        cfg = set_option(cfg, f'DEFAULT_{pkg}', sfe_on)
 
     with open('.config', 'w', encoding='utf-8') as fh:
         fh.write(cfg)
@@ -155,16 +157,23 @@ def configure(enable: bool) -> None:
     print(f'  helloworld pkgs : {len(HELLOWORLD_PKGS_OFF)} forced off')
     print(f'  dnsmasq         : {"full" if enable else "tiny"}')
     print(f'  iproute2        : {"full" if enable else "tiny"}')
-    print(f'  SFE (shortcut-fe): {"off (TPROXY needs netfilter)" if enable else "on"}')
+    if sfe_on:
+        print('  SFE             : ON  (需自行在 fastnat 排除代理流量)')
+    else:
+        print('  SFE             : OFF (TPROXY 需要 netfilter)')
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or sys.argv[1] not in ('enable', 'disable'):
+    args = [a for a in sys.argv[1:] if a != '--keep-sfe']
+    keep_sfe = '--keep-sfe' in sys.argv
+
+    if len(args) != 1 or args[0] not in ('enable', 'disable'):
         print(__doc__, file=sys.stderr)
         return 2
-    enable = sys.argv[1] == 'enable'
+
+    enable = args[0] == 'enable'
     ensure_feed(enable)
-    configure(enable)
+    configure(enable, keep_sfe=keep_sfe)
     return 0
 
 
