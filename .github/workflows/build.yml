@@ -38,7 +38,7 @@ on:
         default: false
         type: boolean
       keep_sfe:
-        description: '保留 SFE 加速（默认在装 ssr-plus 时关闭，因与 TPROXY 冲突；保留需自行在 fastnat 排除代理流量）'
+        description: '保留 SFE 加速（默认开启）。装 ssr-plus 时 SFE 会绕过 netfilter 导致 TPROXY 失效，需自行在 fastnat 排除代理流量'
         required: true
         default: true
         type: boolean

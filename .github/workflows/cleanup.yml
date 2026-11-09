@@ -1,0 +1,207 @@
+name: Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '清理目标'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all              # 全部（缓存 + 产物 + 旧运行）
+          - cache            # 仅构建缓存（dl + ccache）
+          - artifacts        # 仅工作流产物
+          - runs             # 仅旧的运行记录
+      keep_days:
+        description: '保留最近几天的记录（0 = 不按时间删）'
+        required: true
+        default: '7'
+        type: string
+      dry_run:
+        description: '仅预览，不实际删除'
+        required: true
+        default: true
+        type: boolean
+
+  schedule:
+    # 每月 1 号 03:00 UTC 自动清理 30 天前的产物和运行记录
+    - cron: '0 3 1 * *'
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  REPO: ${{ github.repository }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 解析参数
+        id: params
+        run: |
+          TARGET="${{ github.event.inputs.target }}"
+          KEEP_DAYS="${{ github.event.inputs.keep_days }}"
+          DRY="${{ github.event.inputs.dry_run }}"
+
+          # schedule 触发时使用默认值
+          if [ -z "$TARGET" ]; then TARGET="all"; fi
+          if [ -z "$KEEP_DAYS" ]; then KEEP_DAYS="30"; fi
+          if [ -z "$DRY" ]; then DRY="false"; fi
+
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "keep_days=$KEEP_DAYS" >> "$GITHUB_OUTPUT"
+          echo "dry=$DRY" >> "$GITHUB_OUTPUT"
+
+          echo "目标      : $TARGET"
+          echo "保留天数  : $KEEP_DAYS"
+          echo "仅预览    : $DRY"
+
+      - name: 清理前的状态
+        run: |
+          echo "=== 缓存 ==="
+          gh api "repos/$REPO/actions/caches?per_page=100" \
+            --jq 'if (.actions_caches|length)==0 then "无缓存"
+                  else (.actions_caches[] | "\(.size_in_bytes/1048576|floor)MB\t\(.key)") end' || true
+          echo
+          echo "=== 产物 ==="
+          gh api "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq 'if (.artifacts|length)==0 then "无产物"
+                  else (.artifacts[] | "\(.size_in_bytes/1048576|floor)MB\t\(.name)\t\(.created_at)") end' || true
+          echo
+          echo "=== 运行记录总数 ==="
+          gh api "repos/$REPO/actions/runs?per_page=1" --jq '.total_count' || true
+
+      - name: 清理缓存
+        if: steps.params.outputs.target == 'all' || steps.params.outputs.target == 'cache'
+        run: |
+          set -euo pipefail
+          DRY="${{ steps.params.outputs.dry }}"
+          COUNT=0
+
+          IDS=$(gh api "repos/$REPO/actions/caches?per_page=100" \
+                 --jq '.actions_caches[].id' || true)
+
+          if [ -z "$IDS" ]; then
+            echo "没有缓存需要清理"
+            exit 0
+          fi
+
+          for ID in $IDS; do
+            KEY=$(gh api "repos/$REPO/actions/caches?per_page=100" \
+                   --jq ".actions_caches[] | select(.id == $ID) | .key" 2>/dev/null || echo "?")
+            if [ "$DRY" = "true" ]; then
+              echo "[预览] 将删除缓存 id=$ID $KEY"
+            else
+              gh api -X DELETE "repos/$REPO/actions/caches/$ID" >/dev/null 2>&1 \
+                && echo "已删除缓存 id=$ID $KEY" || echo "删除失败 id=$ID"
+              COUNT=$((COUNT+1))
+            fi
+          done
+
+          if [ "$DRY" = "true" ]; then
+            echo "预览模式：未删除任何缓存"
+          else
+            echo "共删除 $COUNT 条缓存"
+          fi
+
+      - name: 清理产物
+        if: steps.params.outputs.target == 'all' || steps.params.outputs.target == 'artifacts'
+        run: |
+          set -euo pipefail
+          DRY="${{ steps.params.outputs.dry }}"
+          KEEP="${{ steps.params.outputs.keep_days }}"
+          COUNT=0
+
+          CUTOFF=$(date -u -d "$KEEP days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+                   date -u -v-"${KEEP}"d +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "删除早于 $CUTOFF 的产物"
+
+          # 分页取所有产物
+          for PAGE in 1 2 3 4 5; do
+            ROWS=$(gh api "repos/$REPO/actions/artifacts?per_page=100&page=$PAGE" \
+                    --jq ".artifacts[] | \"\(.id)\t\(.name)\t\(.created_at)\"" 2>/dev/null || true)
+            [ -z "$ROWS" ] && break
+
+            echo "$ROWS" | while IFS="$(printf '\t')" read -r ID NAME CREATED; do
+              [ -z "$ID" ] && continue
+              if [[ "$CREATED" < "$CUTOFF" ]]; then
+                if [ "$DRY" = "true" ]; then
+                  echo "[预览] 将删除产物 $NAME ($CREATED)"
+                else
+                  gh api -X DELETE "repos/$REPO/actions/artifacts/$ID" >/dev/null 2>&1 \
+                    && echo "已删除产物 $NAME ($CREATED)" || echo "删除失败 $NAME"
+                fi
+              fi
+            done
+          done
+
+          echo "产物清理完成"
+
+      - name: 清理旧运行记录
+        if: steps.params.outputs.target == 'all' || steps.params.outputs.target == 'runs'
+        run: |
+          set -euo pipefail
+          DRY="${{ steps.params.outputs.dry }}"
+          KEEP="${{ steps.params.outputs.keep_days }}"
+
+          CUTOFF=$(date -u -d "$KEEP days ago" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+                   date -u -v-"${KEEP}"d +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "删除早于 $CUTOFF 的运行记录"
+          DELETED=0
+
+          for PAGE in 1 2 3; do
+            ROWS=$(gh api "repos/$REPO/actions/runs?per_page=100&page=$PAGE" \
+                    --jq ".workflow_runs[] | select(.status==\"completed\") | \"\(.id)\t#\(.run_number)\t\(.created_at)\"" 2>/dev/null || true)
+            [ -z "$ROWS" ] && break
+
+            echo "$ROWS" | while IFS="$(printf '\t')" read -r ID NUM CREATED; do
+              [ -z "$ID" ] && continue
+              if [[ "$CREATED" < "$CUTOFF" ]]; then
+                if [ "$DRY" = "true" ]; then
+                  echo "[预览] 将删除运行 $NUM ($CREATED)"
+                else
+                  gh api -X DELETE "repos/$REPO/actions/runs/$ID" >/dev/null 2>&1 \
+                    && echo "已删除运行 $NUM" || echo "删除失败 $NUM"
+                fi
+              fi
+            done
+          done
+
+          echo "运行记录清理完成"
+
+      - name: 清理后的状态
+        if: always()
+        run: |
+          echo "=== 剩余缓存 ==="
+          gh api "repos/$REPO/actions/caches?per_page=100" \
+            --jq 'if (.actions_caches|length)==0 then "无"
+                  else "[\(.actions_caches|length)] 条，合计 \((.actions_caches|map(.size_in_bytes)|add)/1048576|floor)MB" end' || true
+          echo
+          echo "=== 剩余产物 ==="
+          gh api "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq 'if (.artifacts|length)==0 then "无"
+                  else "[\(.artifacts|length)] 个，合计 \((.artifacts|map(.size_in_bytes)|add)/1048576|floor)MB" end' || true
+
+      - name: 汇总
+        if: always()
+        run: |
+          {
+            echo "## 清理结果"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "|---|---|"
+            echo "| 目标 | \`${{ steps.params.outputs.target }}\` |"
+            echo "| 保留天数 | ${{ steps.params.outputs.keep_days }} |"
+            echo "| 预览模式 | \`${{ steps.params.outputs.dry }}\` |"
+            echo ""
+            if [ "${{ steps.params.outputs.dry }}" = "true" ]; then
+              echo "> 本次为预览，未实际删除。确认无误后把 \`dry_run\` 改为 false 再跑一次。"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
