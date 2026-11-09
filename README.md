@@ -41,6 +41,8 @@
 | `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，见下文 |
 | `with_hnat` | **开** | 加入 fastnat 加速面板（软件快速路径） |
 | `with_adblock` | 关 | 加入 adblock-fast DNS 广告过滤 |
+| `with_tools` | 关 | 实用小工具：Web终端/WOL唤醒/WiFi定时/一键进Breed（约 3MB） |
+| `with_extras` | 关 | UPnP 端口映射 + FileBrowser 文件管理（约 4MB 界面，+8MB 内存） |
 
 ### 自动联动规则
 
@@ -52,6 +54,7 @@ with_ss_full=true, with_ssrplus=false → 自动关闭 with_ss_full（内核脱�
 with_ss_full=true, device≠k2-32m      → 强制关闭（7MB 放不下）
 with_ssrplus=true, device=k2-16m      → 强制关闭 with_ssrplus 和 with_xray（见空间限制）
 with_adblock=true, device=k2-8m       → 强制关闭（规则文件需数 MB）
+with_tools/with_extras=true, device=k2-8m → 强制关闭（可写区仅 320KB）
 ```
 
 ## 空间限制（实测数据）
@@ -127,6 +130,7 @@ scripts/configure_ssrplus.py         ssr-plus 开关、helloworld feed、SFE 取
 scripts/configure_ss_full.py         SS/SSR 内核（必须在 ssrplus 之后执行）
 scripts/configure_fastnat.py         fastnat 面板（只控界面，不碰内核模块）
 scripts/configure_adblock.py         DNS 层广告过滤
+scripts/configure_tools.py           小工具与附加功能（ttyd/wol/upnp 等）
 
 scripts/test_cache_filter.sh         缓存清理过滤逻辑自测
 scripts/test_cache_switches.sh       缓存开关逻辑自测

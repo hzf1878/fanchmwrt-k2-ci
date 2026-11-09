@@ -52,6 +52,16 @@ on:
         required: true
         default: false
         type: boolean
+      with_tools:
+        description: '加入实用小工具：Web终端/WOL唤醒/WiFi定时/一键进Breed（约 3MB）'
+        required: true
+        default: false
+        type: boolean
+      with_extras:
+        description: '额外加入 UPnP 端口映射 + FileBrowser 文件管理（约 4MB 界面 + 8MB 内存）'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -116,6 +126,21 @@ jobs:
 
           WITH_ADBLOCK="${{ github.event.inputs.with_adblock }}"
           if [ -z "$WITH_ADBLOCK" ]; then WITH_ADBLOCK="false"; fi
+
+          WITH_TOOLS="${{ github.event.inputs.with_tools }}"
+          if [ -z "$WITH_TOOLS" ]; then WITH_TOOLS="false"; fi
+
+          WITH_EXTRAS="${{ github.event.inputs.with_extras }}"
+          if [ -z "$WITH_EXTRAS" ]; then WITH_EXTRAS="false"; fi
+
+          # 8M 可写区仅 320KB，什么都加不了
+          if [ "$DEVICE" = "k2-8m" ]; then
+            if [ "$WITH_TOOLS" = "true" ] || [ "$WITH_EXTRAS" = "true" ]; then
+              echo "::warning title=8M 空间不足::k2-8m 可写区仅 320KB，已强制关闭 with_tools 和 with_extras。"
+              WITH_TOOLS="false"
+              WITH_EXTRAS="false"
+            fi
+          fi
 
           # 8M 可写区仅 320KB，规则文件放不下
           if [ "$WITH_ADBLOCK" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
@@ -199,6 +224,8 @@ jobs:
           echo "keep_sfe=$KEEP_SFE" >> "$GITHUB_OUTPUT"
           echo "with_hnat=$WITH_HNAT" >> "$GITHUB_OUTPUT"
           echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
+          echo "with_tools=$WITH_TOOLS" >> "$GITHUB_OUTPUT"
+          echo "with_extras=$WITH_EXTRAS" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -211,6 +238,8 @@ jobs:
           echo "keep_sfe      : $KEEP_SFE"
           echo "with_hnat     : $WITH_HNAT"
           echo "with_adblock  : $WITH_ADBLOCK"
+          echo "with_tools    : $WITH_TOOLS"
+          echo "with_extras   : $WITH_EXTRAS"
 
       - name: Free disk space
         run: |
@@ -377,6 +406,18 @@ jobs:
             python3 ../scripts/configure_fastnat.py disable
           fi
 
+          # 实用小工具 / 附加功能
+          if [ "${{ steps.params.outputs.with_tools }}" = "true" ]; then
+            python3 ../scripts/configure_tools.py tools enable
+          else
+            python3 ../scripts/configure_tools.py tools disable
+          fi
+          if [ "${{ steps.params.outputs.with_extras }}" = "true" ]; then
+            python3 ../scripts/configure_tools.py extras enable
+          else
+            python3 ../scripts/configure_tools.py extras disable
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
@@ -393,6 +434,14 @@ jobs:
               echo "  $p = ON"
             else
               echo "  $p = off"
+            fi
+          done
+
+          echo "=== 小工具 / 附加 ==="
+          for p in luci-app-ttyd luci-app-wol luci-app-wifischedule \
+                   luci-app-advanced-reboot luci-app-upnp luci-app-filebrowser; do
+            if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
+              echo "  $p = ON"
             fi
           done
 
