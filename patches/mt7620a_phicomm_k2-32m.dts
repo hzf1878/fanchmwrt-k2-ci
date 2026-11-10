@@ -4,7 +4,7 @@
 
 / {
 	compatible = "phicomm,k2-32m", "ralink,mt7620a-soc";
-	model = "Phicomm K2 (32M flash mod)";
+	model = "Phicomm K2 (32M flash, 256M RAM, USB2 mod)";
 };
 
 &partitions {
@@ -23,4 +23,18 @@
 	pinctrl-names = "default", "pa_gpio";
 	pinctrl-0 = <&pa_pins>;
 	pinctrl-1 = <&pa_gpio_pins>;
+};
+
+/*
+ * USB 2.0
+ *
+ * mt7620a.dtsi 里 ehci / ohci 默认 status = "disabled"，
+ * 原厂 K2 无 USB 口所以没启用。硬件改造加了 USB 后需要在此打开。
+ */
+&ehci {
+	status = "okay";
+};
+
+&ohci {
+	status = "okay";
 };

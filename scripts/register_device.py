@@ -21,7 +21,7 @@ DEVICES = {
   DEVICE_VENDOR := Phicomm
   DEVICE_MODEL := K2
   DEVICE_VARIANT:= 16M flash mod
-  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci kmod-usb-storage block-mount
+  DEVICE_PACKAGES := kmod-mt76x2
   SUPPORTED_DEVICES += psg1218 psg1218a phicomm,psg1218a
 endef
 TARGET_DEVICES += phicomm_k2-16m
@@ -33,7 +33,7 @@ TARGET_DEVICES += phicomm_k2-16m
   DEVICE_VENDOR := Phicomm
   DEVICE_MODEL := K2
   DEVICE_VARIANT:= 32M flash mod
-  DEVICE_PACKAGES := kmod-mt76x2 kmod-usb2 kmod-usb-ohci kmod-usb-storage block-mount
+  DEVICE_PACKAGES := kmod-mt76x2
   SUPPORTED_DEVICES += psg1218 psg1218a phicomm,psg1218a
 endef
 TARGET_DEVICES += phicomm_k2-32m

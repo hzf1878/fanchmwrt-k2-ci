@@ -62,6 +62,11 @@ on:
         required: true
         default: false
         type: boolean
+      with_usb:
+        description: '启用 USB 2.0（仅限已焊接 USB 口的改装机，需配合 k2-32m 的 DTS，约 1MB）'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -132,6 +137,15 @@ jobs:
 
           WITH_EXTRAS="${{ github.event.inputs.with_extras }}"
           if [ -z "$WITH_EXTRAS" ]; then WITH_EXTRAS="false"; fi
+
+          WITH_USB="${{ github.event.inputs.with_usb }}"
+          if [ -z "$WITH_USB" ]; then WITH_USB="false"; fi
+
+          # USB 只有 k2-32m 的 DTS 启用了 &ehci / &ohci
+          if [ "$WITH_USB" = "true" ] && [ "$DEVICE" != "k2-32m" ]; then
+            echo "::warning title=USB 仅 k2-32m 支持::$DEVICE 的 DTS 未启用 ehci/ohci，已强制关闭 with_usb。"
+            WITH_USB="false"
+          fi
 
           # 8M 可写区仅 320KB，什么都加不了
           if [ "$DEVICE" = "k2-8m" ]; then
@@ -253,6 +267,7 @@ jobs:
           echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
           echo "with_tools=$WITH_TOOLS" >> "$GITHUB_OUTPUT"
           echo "with_extras=$WITH_EXTRAS" >> "$GITHUB_OUTPUT"
+          echo "with_usb=$WITH_USB" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -267,6 +282,7 @@ jobs:
           echo "with_adblock  : $WITH_ADBLOCK"
           echo "with_tools    : $WITH_TOOLS"
           echo "with_extras   : $WITH_EXTRAS"
+          echo "with_usb      : $WITH_USB"
 
       - name: Free disk space
         run: |
@@ -443,6 +459,13 @@ jobs:
             python3 ../scripts/configure_tools.py extras enable
           else
             python3 ../scripts/configure_tools.py extras disable
+          fi
+
+          # USB 2.0（仅改装机）
+          if [ "${{ steps.params.outputs.with_usb }}" = "true" ]; then
+            python3 ../scripts/configure_usb.py enable
+          else
+            python3 ../scripts/configure_usb.py disable
           fi
 
           make defconfig

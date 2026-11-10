@@ -43,6 +43,7 @@
 | `with_adblock` | 关 | 加入 adblock-fast DNS 广告过滤 |
 | `with_tools` | 关 | 实用小工具：Web终端/WOL唤醒/WiFi定时/一键进Breed（约 3MB） |
 | `with_extras` | 关 | UPnP 端口映射 + FileBrowser 文件管理（约 4MB 界面，+8MB 内存） |
+| `with_usb` | 关 | 启用 USB 2.0（仅限焊接了 USB 口的改装机，约 1MB） |
 
 ### 自动联动规则
 
@@ -55,6 +56,7 @@ with_ss_full=true, device≠k2-32m      → 强制关闭（7MB 放不下）
 with_ssrplus=true, device=k2-16m      → 强制关闭 with_ssrplus 和 with_xray（见空间限制）
 with_adblock=true, device=k2-8m       → 强制关闭（规则文件需数 MB）
 with_tools/with_extras=true, device=k2-8m → 强制关闭（可写区仅 320KB）
+with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启用 ehci/ohci）
 ```
 
 ### 各设备功能可用性
@@ -69,6 +71,7 @@ with_tools/with_extras=true, device=k2-8m → 强制关闭（可写区仅 320KB�
 | `with_adblock` | ❌ 强制关闭 | ✅ 可用 | ✅ 可用 |
 | `with_tools` | ❌ 强制关闭 | ⚠️ 可用（约 3MB，余量吃紧） | ✅ 可用 |
 | `with_extras` | ❌ 强制关闭 | ⚠️ 会被自动关闭（超限时） | ✅ 可用 |
+| `with_usb` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用（需改装硬件） |
 | `with_ssrplus` | ❌ 强制关闭 | ❌ 强制关闭（超 4.8MB） | ✅ 可用 |
 | `with_ss_full` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用 |
 
@@ -170,6 +173,7 @@ scripts/configure_ss_full.py         SS/SSR 内核（必须在 ssrplus 之后执
 scripts/configure_fastnat.py         fastnat 面板（只控界面，不碰内核模块）
 scripts/configure_adblock.py         DNS 层广告过滤
 scripts/configure_tools.py           小工具与附加功能（ttyd/wol/upnp 等）
+scripts/configure_usb.py             USB 2.0 支持（仅改装机）
 
 scripts/test_cache_filter.sh         缓存清理过滤逻辑自测
 scripts/test_cache_switches.sh       缓存开关逻辑自测
@@ -224,6 +228,47 @@ workflow 已自动处理这一点。
 | 有 dl + ccache 缓存 | 约 50 分钟 |
 | 仅基础固件（含缓存） | 约 45 分钟 |
 | 首次编 SS/SSR（构建 Rust 工具链） | 额外 +50 分钟 |
+
+## 硬件改装说明
+
+### 更换 Flash（8MB → 32MB）
+
+**必须改源码**，否则内核认不到新容量：
+
+| 改动 | 位置 |
+|---|---|
+| 分区表 | `patches/mt7620a_phicomm_k2-32m.dts`，firmware 分区扩到 `0x1fb0000` |
+| 镜像上限 | `register_device.py`，`IMAGE_SIZE := 32448k` |
+
+**推荐芯片**：`MX25L25645GM2I-10G`（Macronix，32MB，200mil 8-SOP）
+—— 和原装 GD25Q64C 同为 8-SOP 208mil，可直接焊。
+官方参数表确认该型号同时提供 200mil 8-SOP 和 300mil 16-SOP 两种封装，
+买 M2I 后缀的是 8 脚。
+
+### 更换内存（64MB → 256MB）
+
+**不需要改源码**。内存容量由 U-Boot 上电探测后传给内核，内核不硬编码。
+
+MT7620A 支持上限 256MB DDR2（16 位位宽）。
+
+注意事项：
+
+- 内存是 **84-ball FBGA** 封装，焊盘在芯片底部，需热风枪 + 助焊膏，
+  焊接难度远高于 Flash 的 SOP-8
+- 原厂 U-Boot 可能写死 64MB 参数，换 Breed 更稳妥
+- 换完进系统用 `free -m` 确认，应显示约 24xxxx KB
+
+### USB 2.0
+
+**需要改源码 + 硬件焊接**：
+
+| 部分 | 处理 |
+|---|---|
+| 硬件 | 焊 USB 母座，D+/D- 接 MT7620A 的 USB 引脚，接 5V |
+| 设备树 | `mt7620a.dtsi` 里 `&ehci` / `&ohci` 默认 `status = "disabled"`，k2-32m 的 DTS 已加 `status = "okay"` |
+| 内核包 | `with_usb` 开关，带入 kmod-usb2/ohci/storage + ext4/vfat |
+
+**只有 k2-32m 的 DTS 启用了 USB**，其他设备选 `with_usb` 会被强制关闭。
 
 ## 刷机注意
 
