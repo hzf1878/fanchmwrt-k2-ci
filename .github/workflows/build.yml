@@ -546,6 +546,23 @@ jobs:
           rm -rf bin/targets/ramips/mt7620/*.manifest
           echo "=== cleaned rootfs artifacts ==="
 
+          # 上游在 CONFIG_EXPERT=y 下会丢掉 CONFIG_PRINTK，
+          # 导致内核编出来 dmesg 全空、/proc/kmsg 不存在。
+          # 这里强制写回，确保内核日志可用。
+          echo "=== forcing CONFIG_PRINTK ==="
+          for f in target/linux/generic/config-6.12 \
+                   target/linux/ramips/config-6.12 \
+                   target/linux/ramips/mt7620/config-6.12; do
+            if [ -f "$f" ]; then
+              sed -i '/^# CONFIG_PRINTK is not set/d' "$f"
+              sed -i '/^CONFIG_PRINTK=/d' "$f"
+              sed -i '/^# CONFIG_LOG_BUF_SHIFT is not set/d' "$f"
+              sed -i '/^CONFIG_LOG_BUF_SHIFT=/d' "$f"
+              printf 'CONFIG_PRINTK=y\nCONFIG_LOG_BUF_SHIFT=17\n' >> "$f"
+              echo "  patched $f"
+            fi
+          done
+
           make -j$(nproc) || make -j1 V=s
 
           echo "=== image size check ==="
