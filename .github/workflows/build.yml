@@ -584,7 +584,32 @@ jobs:
             fi
           done
 
-          make -j$(nproc) || make -j1 V=s
+          # 编译：失败时把真实错误写进 job summary，避免只能拿到 403 的日志接口。
+          # 注意必须保留失败退出码，二次 make 成功也不能掩盖首轮错误。
+          set +e
+          make -j$(nproc) 2>&1 | tee /tmp/build1.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "=== 首轮编译失败 (rc=$rc)，重试 -j1 V=s 以定位包 ==="
+            make -j1 V=s 2>&1 | tee /tmp/build2.log
+            rc2=${PIPESTATUS[0]}
+            {
+              echo "## 编译失败诊断"
+              echo ""
+              echo "\`\`\`"
+              grep -aiE "ERROR: package|failed to build|Error [0-9]+|\*\*\* \[" /tmp/build1.log /tmp/build2.log 2>/dev/null | tail -60
+              echo "\`\`\`"
+              echo ""
+              echo "### 末尾 120 行"
+              echo "\`\`\`"
+              tail -120 /tmp/build2.log 2>/dev/null || tail -120 /tmp/build1.log
+              echo "\`\`\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "=== 错误摘要 ==="
+            grep -aiE "ERROR: package|failed to build|Error [0-9]+" /tmp/build1.log /tmp/build2.log 2>/dev/null | tail -30
+            exit 1
+          fi
+          set -e
 
           echo "=== image size check ==="
           for f in bin/targets/ramips/mt7620/*sysupgrade.bin; do
