@@ -90,7 +90,16 @@ jobs:
         id: params
         run: |
           DEVICE="${{ github.event.inputs.device }}"
-          if [ -z "$DEVICE" ]; then DEVICE="k2-16m"; fi
+          if [ -z "$DEVICE" ]; then
+            # tag 触发不带 inputs，用 tag 名决定设备：v32-* / v8-* / v16-*
+            REF="${GITHUB_REF#refs/tags/}"
+            case "$REF" in
+              v32*) DEVICE="k2-32m" ;;
+              v8-*) DEVICE="k2-8m" ;;
+              *)    DEVICE="k2-16m" ;;
+            esac
+            echo "tag 触发：$REF -> $DEVICE"
+          fi
           echo "device=$DEVICE" >> "$GITHUB_OUTPUT"
           CFG_HASH=$(sha256sum "config/$DEVICE.config" | cut -c1-16)
           echo "cfg_hash=$CFG_HASH" >> "$GITHUB_OUTPUT"
