@@ -378,9 +378,27 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
           if [ "${{ steps.params.outputs.with_ssrplus }}" = "true" ]; then
+            # helloworld 也带 xray-core，与 feeds/packages 的同名包冲突，
+            # 会导致 "package/feeds/packages/xray-core failed to build"。
+            # 这里剔除 helloworld 版本，保留 openwrt/packages 的。
+            echo "=== 移除 helloworld 的冲突包 ==="
+            for pkg in xray-core v2ray-core v2raya luci-app-v2raya; do
+              if [ -e "package/feeds/helloworld/$pkg" ]; then
+                rm -rf "package/feeds/helloworld/$pkg"
+                echo "  removed package/feeds/helloworld/$pkg"
+              fi
+              if [ -e "feeds/helloworld/$pkg" ]; then
+                rm -rf "feeds/helloworld/$pkg"
+                echo "  removed feeds/helloworld/$pkg"
+              fi
+            done
+
             echo "=== ssr-plus 是否可装 ==="
             ./scripts/feeds list -n 2>/dev/null | grep -i "ssr-plus" || echo "未找到 ssr-plus"
+            echo "=== 确认 xray-core 来源 ==="
+            ls -d package/feeds/*/xray-core 2>/dev/null || echo "无 xray-core 目录"
           fi
 
       - name: Load build config
@@ -407,6 +425,9 @@ jobs:
           # xray-core 开关
           sed -i '/^CONFIG_PACKAGE_xray-core=/d' .config
           sed -i '/^# CONFIG_PACKAGE_xray-core is not set/d' .config
+          # helloworld 的 xray 已剔除，确保只留 feeds/packages 的
+          sed -i '/^CONFIG_PACKAGE_xray-plugin=/d' .config
+          echo '# CONFIG_PACKAGE_xray-plugin is not set' >> .config
           if [ "${{ steps.params.outputs.with_xray }}" = "true" ]; then
             echo 'CONFIG_PACKAGE_xray-core=y' >> .config
             echo "xray-core: enabled"
