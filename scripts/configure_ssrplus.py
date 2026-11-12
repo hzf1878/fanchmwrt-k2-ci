@@ -138,10 +138,13 @@ def configure(enable: bool, keep_sfe: bool = False) -> None:
         cfg = set_option(cfg, f'PACKAGE_{base}', not enable)
         cfg = set_option(cfg, f'PACKAGE_{full}', enable)
 
-    # SFE 与 TPROXY 冲突：默认在启用 ssr-plus 时关闭，改用 nft flowtable。
-    # 可用 keep_sfe 保留，此时需自行在 fastnat 里排除代理流量。
+    # SFE 会绕过 netfilter 使 TPROXY 失效，且模块内部只暴露 /sys/sfe_cm/enabled
+    # 一个总开关，无法按端口或 mark 排除代理流量。
+    # 因此 SFE 完全由 keep_sfe 决定，与是否装 ssr-plus 无关：
+    #   keep_sfe=false（默认）→ 任何情况下都不编 SFE
+    #   keep_sfe=true         → 保留 SFE，此时必须接受代理可能不工作
     # 注意 CONFIG_DEFAULT_<pkg> 是 FanchmWrt 的默认包机制，只关 CONFIG_PACKAGE_ 会被它顶回来。
-    sfe_on = (not enable) or keep_sfe
+    sfe_on = keep_sfe
     for pkg in SFE_PKGS:
         cfg = set_option(cfg, f'PACKAGE_{pkg}', sfe_on)
         cfg = set_option(cfg, f'DEFAULT_{pkg}', sfe_on)
@@ -158,7 +161,7 @@ def configure(enable: bool, keep_sfe: bool = False) -> None:
     print(f'  dnsmasq         : {"full" if enable else "tiny"}')
     print(f'  iproute2        : {"full" if enable else "tiny"}')
     if sfe_on:
-        print('  SFE             : ON  (需自行在 fastnat 排除代理流量)')
+        print('  SFE             : ON  (无法按端口排除，代理大概率不工作)')
     else:
         print('  SFE             : OFF (TPROXY 需要 netfilter)')
 

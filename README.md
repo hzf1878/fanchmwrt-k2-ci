@@ -38,8 +38,8 @@
 | `with_xray` | 关 | 加入 xray-core（trojan/VMess/VLESS/SS，约 3.5MB） |
 | `with_ssrplus` | 关 | 加入 luci-app-ssr-plus 图形界面（约 9MB） |
 | `with_ss_full` | 关 | 额外加入 SS/SSR 内核（约 7MB，仅 32M） |
-| `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，跑代理须关，见下文 |
-| `with_hnat` | **开** | 加入 fastnat 加速面板（软件快速路径） |
+| `keep_sfe` | 关 | 保留 SFE 加速。与 TPROXY 冲突且无法排除，跑代理必须关闭 |
+| `with_hnat` | 关 | 加入 fastnat 加速面板（软件快速路径） |
 | `with_ttyd` | 关 | Web 终端 ttyd（约 470KB） |
 | `with_wol` | 关 | 网络唤醒 WOL（约 18KB） |
 | `with_wifischedule` | 关 | WiFi 定时开关（约 6KB） |
@@ -101,7 +101,7 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | 纯路由（最快） | 默认即可 | 默认即可 | 默认即可 |
 | 加 Web 终端 | — | + `with_ttyd` | + `with_ttyd` |
 | 加常用工具 | — | + `with_ttyd` + `with_wol` + `with_advreboot` | 同左 |
-| 跑 trojan | — | + `with_xray`，`keep_sfe` 取消 | + `with_xray` + `with_ssrplus` |
+| 跑 trojan | — | + `with_xray`（keep_sfe 保持默认关闭） | + `with_xray` + `with_ssrplus` |
 | 全功能 | — | 放不下 | 全部勾选约 27.9MB（分区 31.7MB，余 3.75MB） |
 
 ## 空间限制（实测数据）
@@ -146,8 +146,8 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 
 | 场景 | keep_sfe | flowtable |
 |---|---|---|
-| 纯路由，要满速 | **true**（默认） | 可开 |
-| 跑代理 | **false** | **必须一并关闭** |
+| 跑代理（默认） | **false** | **必须关闭** |
+| 纯路由，要满速 | true（需接受代理不工作） | 可开 |
 
 **关于 fastnat 面板的"排除代理流量"**
 

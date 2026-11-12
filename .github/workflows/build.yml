@@ -38,14 +38,14 @@ on:
         default: false
         type: boolean
       keep_sfe:
-        description: '保留 SFE 加速（默认开启）。装 ssr-plus 时 SFE 会绕过 netfilter 导致 TPROXY 失效，需自行在 fastnat 排除代理流量'
+        description: '保留 SFE 加速（默认关闭）。SFE 会绕过 netfilter 使 TPROXY 失效，且无法按端口/mark 排除，跑代理必须关闭'
         required: true
-        default: true
+        default: false
         type: boolean
       with_hnat:
-        description: '加入 HNAT/fastnat 加速界面（默认开启）。MT7620A 无硬件引擎，实际是 SFE+flowtable 软件快速路径'
+        description: '加入 HNAT/fastnat 加速界面（默认关闭）。MT7620A 无硬件引擎，实际是 SFE+flowtable 软件快速路径'
         required: true
-        default: true
+        default: false
         type: boolean
       with_ttyd:
         description: 'Web 终端 ttyd（浏览器里打开命令行，约 470KB）'
@@ -151,7 +151,7 @@ jobs:
           if [ -z "$KEEP_SFE" ]; then KEEP_SFE="false"; fi
 
           WITH_HNAT="${{ github.event.inputs.with_hnat }}"
-          if [ -z "$WITH_HNAT" ]; then WITH_HNAT="true"; fi
+          if [ -z "$WITH_HNAT" ]; then WITH_HNAT="false"; fi
 
           WITH_TTYD="${{ github.event.inputs.with_ttyd }}"
           if [ -z "$WITH_TTYD" ]; then WITH_TTYD="false"; fi
@@ -479,14 +479,15 @@ jobs:
           fi
 
           # ssr-plus 与 feeds 管理
+          # keep_sfe 无论是否装 ssr-plus 都要传给脚本：SFE 是全局开关
+          KEEP_SFE_ARG=""
+          if [ "${{ steps.params.outputs.keep_sfe }}" = "true" ]; then
+            KEEP_SFE_ARG="--keep-sfe"
+          fi
           if [ "${{ steps.params.outputs.with_ssrplus }}" = "true" ]; then
-            if [ "${{ steps.params.outputs.keep_sfe }}" = "true" ]; then
-              python3 ../scripts/configure_ssrplus.py enable --keep-sfe
-            else
-              python3 ../scripts/configure_ssrplus.py enable
-            fi
+            python3 ../scripts/configure_ssrplus.py enable $KEEP_SFE_ARG
           else
-            python3 ../scripts/configure_ssrplus.py disable
+            python3 ../scripts/configure_ssrplus.py disable $KEEP_SFE_ARG
           fi
 
           # SS/SSR 内核：必须在 configure_ssrplus.py 之后执行，
