@@ -57,6 +57,12 @@ ITEMS = {
         'pkgs': [],
         'off': [],
     },
+    'ftp': {
+        'desc': 'FTP 共享 vsftpd',
+        'luci': ['luci-app-vsftpd'],
+        'pkgs': ['vsftpd'],
+        'off': [],
+    },
 }
 
 # 兼容旧参数名

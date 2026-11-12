@@ -1,5 +1,12 @@
 name: 编译斐讯 K2 固件
 
+# 同设备同时只跑一个，新任务排队等待而不是取消旧的。
+# 注意不要用 cancel-in-progress: true —— 一次编译要一小时，
+# 中途取消等于白跑，而且会让「上一轮为什么失败」无从追查。
+concurrency:
+  group: build-k2-${{ github.event.inputs.device || github.ref_name }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
@@ -74,6 +81,11 @@ on:
         type: boolean
       with_filebrowser:
         description: 'FileBrowser 文件管理（网页版文件管理器，仅界面约 1KB，无二进制）'
+        required: true
+        default: false
+        type: boolean
+      with_ftp:
+        description: 'FTP 共享 vsftpd（共享 U 盘/存储，约 140KB。需自建账号并放行 21 与 50000-50100）'
         required: true
         default: false
         type: boolean
@@ -171,6 +183,9 @@ jobs:
           WITH_FILEBROWSER="${{ github.event.inputs.with_filebrowser }}"
           if [ -z "$WITH_FILEBROWSER" ]; then WITH_FILEBROWSER="false"; fi
 
+          WITH_FTP="${{ github.event.inputs.with_ftp }}"
+          if [ -z "$WITH_FTP" ]; then WITH_FTP="false"; fi
+
           WITH_USB="${{ github.event.inputs.with_usb }}"
           if [ -z "$WITH_USB" ]; then WITH_USB="false"; fi
 
@@ -184,7 +199,8 @@ jobs:
           if [ "$DEVICE" = "k2-8m" ]; then
             if [ "$WITH_TTYD" = "true" ] || [ "$WITH_WOL" = "true" ] \
                || [ "$WITH_WIFISCHEDULE" = "true" ] || [ "$WITH_ADVREBOOT" = "true" ] \
-               || [ "$WITH_UPNP" = "true" ] || [ "$WITH_FILEBROWSER" = "true" ]; then
+               || [ "$WITH_UPNP" = "true" ] || [ "$WITH_FILEBROWSER" = "true" ] \
+               || [ "$WITH_FTP" = "true" ]; then
               echo "::warning title=8M 空间不足::k2-8m 可写区仅 320KB，已强制关闭全部可选组件。"
               WITH_TTYD="false"
               WITH_WOL="false"
@@ -192,6 +208,7 @@ jobs:
               WITH_ADVREBOOT="false"
               WITH_UPNP="false"
               WITH_FILEBROWSER="false"
+              WITH_FTP="false"
             fi
           fi
 
@@ -244,6 +261,7 @@ jobs:
             ADVREBOOT_ADD=13000      # with_advreboot   纯脚本，无二进制
             UPNP_ADD=164000          # with_upnp  miniupnpd 154KB + 界面 10KB
             FILEBROWSER_ADD=1100     # with_filebrowser 只有界面，无二进制
+            FTP_ADD=145000           # with_ftp  vsftpd 二进制 132KB + 配置
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
             if [ "$WITH_SSRPLUS" = "true" ]; then
@@ -267,6 +285,7 @@ jobs:
               [ "$WITH_ADVREBOOT" = "true" ] && NEED=$((NEED + ADVREBOOT_ADD))
               [ "$WITH_UPNP" = "true" ] && NEED=$((NEED + UPNP_ADD))
               [ "$WITH_FILEBROWSER" = "true" ] && NEED=$((NEED + FILEBROWSER_ADD))
+              [ "$WITH_FTP" = "true" ] && NEED=$((NEED + FTP_ADD))
 
               echo "=== 16M 空间预算 ==="
               echo "分区上界   : $FW_MAX"
@@ -306,6 +325,7 @@ jobs:
           echo "with_advreboot=$WITH_ADVREBOOT" >> "$GITHUB_OUTPUT"
           echo "with_upnp=$WITH_UPNP" >> "$GITHUB_OUTPUT"
           echo "with_filebrowser=$WITH_FILEBROWSER" >> "$GITHUB_OUTPUT"
+          echo "with_ftp=$WITH_FTP" >> "$GITHUB_OUTPUT"
           echo "with_usb=$WITH_USB" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
@@ -324,6 +344,7 @@ jobs:
           echo "with_advreboot: $WITH_ADVREBOOT"
           echo "with_upnp     : $WITH_UPNP"
           echo "with_filebrowser : $WITH_FILEBROWSER"
+          echo "with_ftp      : $WITH_FTP"
           echo "with_usb      : $WITH_USB"
 
       - name: Free disk space
@@ -508,7 +529,7 @@ jobs:
 
           # 可选组件（逐项独立开关）
           echo "=== 可选组件 ==="
-          for item in ttyd wol wifischedule advreboot upnp filebrowser; do
+          for item in ttyd wol wifischedule advreboot upnp filebrowser ftp; do
             FLAG="with_${item}"
             VAL="${{ steps.params.outputs.with_ttyd }}"
             case "$item" in
@@ -518,6 +539,7 @@ jobs:
               advreboot)    VAL="${{ steps.params.outputs.with_advreboot }}" ;;
               upnp)         VAL="${{ steps.params.outputs.with_upnp }}" ;;
               filebrowser)  VAL="${{ steps.params.outputs.with_filebrowser }}" ;;
+              ftp)          VAL="${{ steps.params.outputs.with_ftp }}" ;;
             esac
             if [ "$VAL" = "true" ]; then
               python3 ../scripts/configure_tools.py "$item" enable

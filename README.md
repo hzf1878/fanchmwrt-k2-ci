@@ -46,6 +46,7 @@
 | `with_advreboot` | 关 | 一键重启进 Breed（免按复位键，约 13KB） |
 | `with_upnp` | 关 | UPnP 端口自动映射（约 160KB） |
 | `with_filebrowser` | 关 | FileBrowser 文件管理（仅界面，约 1KB，无二进制） |
+| `with_ftp` | 关 | FTP 共享 vsftpd（约 145KB，共享 U 盘用） |
 | `with_usb` | 关 | 启用 USB 2.0（仅限焊接了 USB 口的改装机，约 1MB） |
 
 ### 自动联动规则
@@ -77,6 +78,7 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | `with_advreboot` | ❌ 强制关闭 | ✅ 可用（13KB） | ✅ 可用 |
 | `with_upnp` | ❌ 强制关闭 | ⚠️ 可用（160KB） | ✅ 可用 |
 | `with_filebrowser` | ❌ 强制关闭 | ✅ 可用（1KB） | ✅ 可用 |
+| `with_ftp` | ❌ 强制关闭 | ⚠️ 可用（145KB） | ✅ 可用 |
 | `with_usb` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用（需改装硬件） |
 | `with_ssrplus` | ❌ 强制关闭 | ❌ 强制关闭（超 4.8MB） | ✅ 可用 |
 | `with_ss_full` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用 |
@@ -201,7 +203,7 @@ scripts/configure_ssrplus.py         ssr-plus 开关、helloworld feed、SFE 取
 scripts/configure_ss_full.py         SS/SSR 内核（必须在 ssrplus 之后执行）
 scripts/configure_fastnat.py         fastnat 面板（只控界面，不碰内核模块）
 scripts/configure_tools.py           可选组件逐项开关（ttyd/wol/wifischedule/
-                                     advreboot/upnp/filebrowser）
+                                     advreboot/upnp/filebrowser/ftp）
 scripts/configure_usb.py             USB 2.0 支持（仅改装机）
 
 scripts/test_cache_filter.sh         缓存清理过滤逻辑自测
@@ -361,6 +363,55 @@ apk add --allow-untrusted /tmp/xxx.apk
 另外，固件的 `/usr/lib/opkg/status` 只有 `Conffiles:` 段、没有任何
 `Package:` 记录，这是 OpenWrt 的正常行为：**编译进镜像的包不写入 opkg 数据库**，
 只有事后用 opkg 装的才写。所以全新刷机后 `opkg list-installed` 为空不是故障。
+
+## FTP 文件共享（with_ftp）
+
+勾选 `with_ftp` 后固件自带 vsftpd，用于在局域网内读写 U 盘或存储。
+
+### 首次配置
+
+固件只装软件，账号和防火墙要自己配：
+
+```sh
+# 1. 建账号，家目录指向要共享的目录
+mkdir -p /mnt/sda1 && chmod 777 /mnt/sda1
+echo 'ftpuser:x:1000:1000:ftpuser:/mnt/sda1:/bin/false' >> /etc/passwd
+echo 'ftpuser:x:1000:' >> /etc/group
+passwd ftpuser
+
+# 2. 放行端口（21 控制 + 50000-50100 被动模式）
+uci add firewall rule
+uci set firewall.@rule[-1].name='Allow-FTP'
+uci set firewall.@rule[-1].src='lan'
+uci set firewall.@rule[-1].proto='tcp'
+uci set firewall.@rule[-1].dest_port='21 50000-50100'
+uci set firewall.@rule[-1].target='ACCEPT'
+uci commit firewall && /etc/init.d/firewall reload
+
+# 3. 启动并设为开机自启
+/etc/init.d/vsftpd enable
+/etc/init.d/vsftpd start
+```
+
+### U 盘中文文件名
+
+vfat 默认按 iso8859-1 挂载，中文会乱码。给挂载点加 UTF-8 选项：
+
+```sh
+uci set fstab.@mount[0].options='iocharset=utf8,utf8=1,umask=0000'
+uci commit fstab
+umount /mnt/sda1 && mount /dev/sda1 /mnt/sda1 -o iocharset=utf8,utf8=1,umask=0000
+```
+
+### 已知问题
+
+**不要加 `utf8_filesystem=YES`**。该参数在 24.10 版 vsftpd 配 25.12 内核时，
+会让进程以 `exit=2` 静默退出且不打任何日志。中文文件名改用上面的
+vfat `iocharset=utf8` 解决，与 vsftpd 无关。
+
+**`allow_writeable_chroot=YES` 是必须的**。少了它，家目录可写时登录会被拒。
+
+**`secure_chroot_dir=/var/run/vsftpd` 目录必须存在**，否则 vsftpd 启动即退出。
 
 ## 已知限制
 
