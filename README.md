@@ -41,12 +41,12 @@
 | `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，见下文 |
 | `with_hnat` | **开** | 加入 fastnat 加速面板（软件快速路径） |
 | `with_adblock` | 关 | 加入 adblock-fast DNS 广告过滤 |
-| `with_ttyd` | 关 | Web 终端 ttyd（浏览器里开命令行，约 1MB） |
-| `with_wol` | 关 | 网络唤醒 WOL（约 100KB） |
-| `with_wifischedule` | 关 | WiFi 定时开关（约 300KB） |
-| `with_advreboot` | 关 | 一键重启进 Breed（免按复位键，约 100KB） |
-| `with_upnp` | 关 | UPnP 端口自动映射（约 1MB 界面，+3MB 内存） |
-| `with_filebrowser` | 关 | FileBrowser 文件管理（约 3MB 界面，+5MB 内存） |
+| `with_ttyd` | 关 | Web 终端 ttyd（约 470KB） |
+| `with_wol` | 关 | 网络唤醒 WOL（约 18KB） |
+| `with_wifischedule` | 关 | WiFi 定时开关（约 6KB） |
+| `with_advreboot` | 关 | 一键重启进 Breed（免按复位键，约 13KB） |
+| `with_upnp` | 关 | UPnP 端口自动映射（约 160KB） |
+| `with_filebrowser` | 关 | FileBrowser 文件管理（仅界面，约 1KB，无二进制） |
 | `with_usb` | 关 | 启用 USB 2.0（仅限焊接了 USB 口的改装机，约 1MB） |
 
 ### 自动联动规则
@@ -74,12 +74,12 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | `keep_sfe` | ✅ | ✅ | ✅ |
 | `with_xray` | ❌ 强制关闭 | ⚠️ 可用（余约 1.2MB） | ✅ 可用 |
 | `with_adblock` | ❌ 强制关闭 | ✅ 可用 | ✅ 可用 |
-| `with_ttyd` | ❌ 强制关闭 | ⚠️ 可用（1MB） | ✅ 可用 |
-| `with_wol` | ❌ 强制关闭 | ✅ 可用（100KB） | ✅ 可用 |
-| `with_wifischedule` | ❌ 强制关闭 | ✅ 可用（300KB） | ✅ 可用 |
-| `with_advreboot` | ❌ 强制关闭 | ✅ 可用（100KB） | ✅ 可用 |
-| `with_upnp` | ❌ 强制关闭 | ⚠️ 可用（1MB） | ✅ 可用 |
-| `with_filebrowser` | ❌ 强制关闭 | ⚠️ 会被自动关闭（3MB） | ✅ 可用 |
+| `with_ttyd` | ❌ 强制关闭 | ✅ 可用（470KB） | ✅ 可用 |
+| `with_wol` | ❌ 强制关闭 | ✅ 可用（18KB） | ✅ 可用 |
+| `with_wifischedule` | ❌ 强制关闭 | ✅ 可用（6KB） | ✅ 可用 |
+| `with_advreboot` | ❌ 强制关闭 | ✅ 可用（13KB） | ✅ 可用 |
+| `with_upnp` | ❌ 强制关闭 | ⚠️ 可用（160KB） | ✅ 可用 |
+| `with_filebrowser` | ❌ 强制关闭 | ✅ 可用（1KB） | ✅ 可用 |
 | `with_usb` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用（需改装硬件） |
 | `with_ssrplus` | ❌ 强制关闭 | ❌ 强制关闭（超 4.8MB） | ✅ 可用 |
 | `with_ss_full` | ❌ 强制关闭 | ❌ 强制关闭 | ✅ 可用 |
@@ -89,11 +89,10 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 **`k2-16m` 上的降级顺序**（超限时按体积从大到小依次放弃）：
 
 ```
-① 关 with_filebrowser（3MB）
-② 关 with_xray（3.5MB）
-③ 关 with_ttyd（1MB）
-④ 关 with_upnp（1MB）
-⑤ 关 with_adblock（0.3MB）
+① 关 with_xray（3.5MB）
+② 关 with_ttyd（470KB）
+③ 关 with_upnp（160KB）
+④ 关 with_adblock（0.3MB）
 ```
 
 每次降级都会在日志里输出 `::warning`，说明关了哪项、原本会超多少。
@@ -108,7 +107,7 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | 加 Web 终端 | — | + `with_ttyd` | + `with_ttyd` |
 | 加常用工具 | — | + `with_ttyd` + `with_wol` + `with_advreboot` | 同左 |
 | 跑 trojan | — | + `with_xray`，`keep_sfe` 取消 | + `with_xray` + `with_ssrplus` |
-| 全功能 | — | 放不下 | 全部勾选约 32.8MB，**超出分区 1.1MB**；建议去掉 `with_filebrowser`（3MB） |
+| 全功能 | — | 放不下 | 全部勾选约 27.9MB（分区 31.7MB，余 3.75MB） |
 
 ## 空间限制（实测数据）
 

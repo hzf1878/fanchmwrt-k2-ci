@@ -53,32 +53,32 @@ on:
         default: false
         type: boolean
       with_ttyd:
-        description: 'Web 终端 ttyd（浏览器里打开命令行，约 1MB）'
+        description: 'Web 终端 ttyd（浏览器里打开命令行，约 470KB）'
         required: true
         default: false
         type: boolean
       with_wol:
-        description: '网络唤醒 WOL（远程开机局域网设备，约 100KB）'
+        description: '网络唤醒 WOL（远程开机局域网设备，约 18KB）'
         required: true
         default: false
         type: boolean
       with_wifischedule:
-        description: 'WiFi 定时开关（按时间段自动开关无线，约 300KB）'
+        description: 'WiFi 定时开关（按时间段自动开关无线，约 6KB）'
         required: true
         default: false
         type: boolean
       with_advreboot:
-        description: '一键重启进 Breed（免按复位键，约 100KB）'
+        description: '一键重启进 Breed（免按复位键，约 13KB）'
         required: true
         default: false
         type: boolean
       with_upnp:
-        description: 'UPnP 端口自动映射（内网设备自动开端口，约 1MB 界面 + 3MB 内存）'
+        description: 'UPnP 端口自动映射（内网设备自动开端口，约 160KB）'
         required: true
         default: false
         type: boolean
       with_filebrowser:
-        description: 'FileBrowser 文件管理（网页版文件管理器，约 3MB 界面 + 5MB 内存）'
+        description: 'FileBrowser 文件管理（网页版文件管理器，仅界面约 1KB，无二进制）'
         required: true
         default: false
         type: boolean
@@ -250,12 +250,14 @@ jobs:
             BASE_IMG=11469641        # 空固件 sysupgrade
             XRAY_ADD=3670016         # xray ~3.5MB
             SSRPLUS_ADD=6160000      # ssr-plus 其余部分 ~5.9MB
-            TTYD_ADD=1048576         # with_ttyd ~1MB
-            WOL_ADD=102400           # with_wol ~100KB
-            WIFISCHED_ADD=307200     # with_wifischedule ~300KB
-            ADVREBOOT_ADD=102400     # with_advreboot ~100KB
-            UPNP_ADD=1048576         # with_upnp ~1MB
-            FILEBROWSER_ADD=3145728  # with_filebrowser ~3MB
+            # 以下均为实测体积（2026-11-12 从 #12 固件 ROM 分区量取），
+            # 含 luci 界面 + i18n + uci-defaults + 后端二进制。
+            TTYD_ADD=479000          # with_ttyd  ttyd 二进制 475KB + 界面 3KB
+            WOL_ADD=18000            # with_wol   etherwake 9.4KB + 界面 8.5KB
+            WIFISCHED_ADD=6000       # with_wifischedule 纯脚本，无二进制
+            ADVREBOOT_ADD=13000      # with_advreboot   纯脚本，无二进制
+            UPNP_ADD=164000          # with_upnp  miniupnpd 154KB + 界面 10KB
+            FILEBROWSER_ADD=1100     # with_filebrowser 只有界面，无二进制
             ADBLOCK_ADD=314572       # with_adblock ~0.3MB
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
@@ -288,26 +290,21 @@ jobs:
               echo "余量       : $((FW_MAX - NEED))"
 
               if [ "$NEED" -gt "$FW_MAX" ]; then
-                # 按体积从大到小依次放弃
-                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_FILEBROWSER" = "true" ]; then
-                  echo "::warning title=16M 装不下 filebrowser::已强制关闭 with_filebrowser（约 3MB）"
-                  WITH_FILEBROWSER="false"
-                  NEED=$((NEED - FILEBROWSER_ADD))
-                fi
-                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TTYD" = "true" ]; then
-                  echo "::warning title=16M 装不下 ttyd::已强制关闭 with_ttyd（约 1MB）"
-                  WITH_TTYD="false"
-                  NEED=$((NEED - TTYD_ADD))
-                fi
-                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_UPNP" = "true" ]; then
-                  echo "::warning title=16M 装不下 upnp::已强制关闭 with_upnp（约 1MB）"
-                  WITH_UPNP="false"
-                  NEED=$((NEED - UPNP_ADD))
-                fi
+                # 按实测体积从大到小依次放弃
                 if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_XRAY" = "true" ]; then
                   echo "::warning title=16M 装不下 xray::已强制关闭 with_xray（约 3.5MB）"
                   WITH_XRAY="false"
                   NEED=$((NEED - XRAY_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TTYD" = "true" ]; then
+                  echo "::warning title=16M 装不下 ttyd::已强制关闭 with_ttyd（约 468KB）"
+                  WITH_TTYD="false"
+                  NEED=$((NEED - TTYD_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_UPNP" = "true" ]; then
+                  echo "::warning title=16M 装不下 upnp::已强制关闭 with_upnp（约 160KB）"
+                  WITH_UPNP="false"
+                  NEED=$((NEED - UPNP_ADD))
                 fi
                 if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_ADBLOCK" = "true" ]; then
                   echo "::warning title=16M 装不下 adblock::已强制关闭 with_adblock"
