@@ -38,7 +38,7 @@
 | `with_xray` | 关 | 加入 xray-core（trojan/VMess/VLESS/SS，约 3.5MB） |
 | `with_ssrplus` | 关 | 加入 luci-app-ssr-plus 图形界面（约 9MB） |
 | `with_ss_full` | 关 | 额外加入 SS/SSR 内核（约 7MB，仅 32M） |
-| `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，见下文 |
+| `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，跑代理须关，见下文 |
 | `with_hnat` | **开** | 加入 fastnat 加速面板（软件快速路径） |
 | `with_ttyd` | 关 | Web 终端 ttyd（约 470KB） |
 | `with_wol` | 关 | 网络唤醒 WOL（约 18KB） |
@@ -132,23 +132,48 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 
 ## 加速功能说明
 
-固件里有三条加速路径，容易混淆：
+固件里有两套 offload 机制，都容易和代理冲突：
 
 | 模块 | 名称 | 机制 | 与代理冲突 |
 |---|---|---|---|
 | `kmod-shortcut-fe` | **SFE** | 独立快捷通道，绕过 netfilter | **会冲突** |
-| `kmod-nf-flow` | flowtable | netfilter 内部 flow 表 | 较小，可按规则排除 |
-| `kmod-nft-offload` | nft offload | nftables offload | 较小，可按规则排除 |
+| `kmod-nf-flow` + `kmod-nft-offload` | flowtable | nftables 原生 flow 表 | **同样会冲突** |
 
-**SFE 会跳过 netfilter，导致 TPROXY 重定向失效** —— 表现为直连正常但代理不通。
+**这两条路径都会绕过 netfilter 的转发链**，TPROXY 建立的重定向收不到后续数据包，
+表现为"能连上但卡住"或"部分站点打不开"。区别只是 SFE 更激进。
 
 因此 `keep_sfe` 的取舍：
 
-| 场景 | keep_sfe |
-|---|---|
-| 纯路由，要满速 | **true**（默认） |
-| 跑代理 | **false**（关 SFE，保留 flowtable） |
-| 两者都要 | true，但需在 fastnat 面板把代理流量加入排除 |
+| 场景 | keep_sfe | flowtable |
+|---|---|---|
+| 纯路由，要满速 | **true**（默认） | 可开 |
+| 跑代理 | **false** | **必须一并关闭** |
+
+**关于 fastnat 面板的"排除代理流量"**
+
+面板上没有这个功能，也没有办法实现：SFE 模块（`shortcut-fe-cm.ko`）的排除条件
+全部是内核内部状态判定（广播/组播、无 conntrack、ALG、TCP 未建立、LOCAL_OUT、
+FWX_APPID 等），没有暴露任何按端口、mark 或接口筛选的用户可配开关。
+sysfs 只提供 `/sys/sfe_cm/enabled` 一个总开关。
+
+所以"两者都要"做不到。要跑代理就必须关掉 offload，没有折中方案。
+
+关闭方法：
+
+```sh
+# SFE
+uci set fastnat.global.enabled='0'
+uci commit fastnat
+/etc/init.d/fastnat stop
+
+# flowtable（若曾开启）
+uci set firewall.@defaults[0].flow_offloading='0'
+uci commit firewall
+/etc/init.d/firewall restart
+```
+
+**性能影响对 K2 可忽略**：MT7620A 关掉 offload 后 CPU 转发仍有 300–400Mbps，
+高于百兆网口上限，也高于这台机器无线中继的实际带宽。
 
 ### 关于 MT7620A 的"HWNAT"
 
