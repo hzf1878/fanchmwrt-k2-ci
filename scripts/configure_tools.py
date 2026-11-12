@@ -1,47 +1,72 @@
 #!/usr/bin/env python3
-"""Toggle two groups of optional utility packages for the K2 build.
+"""按单项开关配置 K2 固件的可选组件。
 
-Group A -- with_tools（实用小工具）:
-    luci-app-ttyd              Web 终端（不装 SSH 也能操作）
-    luci-app-wol               网络唤醒
-    luci-app-wifischedule      WiFi 定时开关
-    luci-app-advanced-reboot   一键重启进 Breed
+每一项都可以独立开关，互不影响：
 
-Group B -- with_extras（按需追加）:
-    luci-app-upnp              内网端口自动映射
-    luci-app-filebrowser       轻量文件管理
+    ttyd      Web 终端            luci-app-ttyd + ttyd
+    wol       网络唤醒            luci-app-wol + etherwake
+    wifischedule  WiFi 定时开关   luci-app-wifischedule + wifischedule
+    advreboot 一键进 Breed        luci-app-advanced-reboot
+    upnp      内网端口自动映射    luci-app-upnp + miniupnpd-nftables
+    filebrowser 文件管理          luci-app-filebrowser
 
-Usage:
-    python3 configure_tools.py tools enable
-    python3 configure_tools.py extras enable
-    python3 configure_tools.py tools disable
+用法：
+    python3 configure_tools.py ttyd enable
+    python3 configure_tools.py upnp disable
+    python3 configure_tools.py           # 查看全部项目
 """
 import sys
 
-GROUPS = {
-    'tools': [
-        'luci-app-ttyd',
-        'luci-app-wol',
-        'luci-app-wifischedule',
-        'luci-app-advanced-reboot',
-    ],
-    'extras': [
-        'luci-app-upnp',
-        'luci-app-filebrowser',
-    ],
+# 每项：luci 界面包 + 后端包
+ITEMS = {
+    'ttyd': {
+        'desc': 'Web 终端',
+        'luci': ['luci-app-ttyd'],
+        'pkgs': ['ttyd'],
+        'off': [],
+    },
+    'wol': {
+        'desc': '网络唤醒 WOL',
+        'luci': ['luci-app-wol'],
+        'pkgs': ['etherwake'],
+        'off': [],
+    },
+    'wifischedule': {
+        'desc': 'WiFi 定时开关',
+        'luci': ['luci-app-wifischedule'],
+        'pkgs': ['wifischedule'],
+        'off': [],
+    },
+    'advreboot': {
+        'desc': '一键重启进 Breed',
+        'luci': ['luci-app-advanced-reboot'],
+        'pkgs': [],
+        'off': [],
+    },
+    'upnp': {
+        'desc': 'UPnP 端口映射',
+        'luci': ['luci-app-upnp'],
+        # miniupnpd 有 iptables / nftables 两个变体，固件用 firewall4，
+        # 必须选 nftables 版，否则会和 ssr-plus 一样出现文件冲突。
+        'pkgs': ['miniupnpd-nftables', 'rpcd-mod-ucode'],
+        'off': ['miniupnpd-iptables'],
+    },
+    'filebrowser': {
+        'desc': 'FileBrowser 文件管理',
+        'luci': ['luci-app-filebrowser'],
+        'pkgs': [],
+        'off': [],
+    },
 }
 
-# 显式打开的后端包（依赖会带，但写死避免被 defconfig 丢弃）
-# 注意 miniupnpd 有 iptables / nftables 两个变体，当前固件用 firewall4，
-# 必须选 nftables 版，否则会出现和 ssr-plus 类似的文件冲突。
-EXTRA_PKGS = {
-    'tools': ['ttyd', 'etherwake', 'wifischedule'],
-    'extras': ['miniupnpd-nftables', 'rpcd-mod-ucode'],
+# 兼容旧参数名
+ALIASES = {
+    'tools': None,    # 展开成 4 个
+    'extras': None,   # 展开成 2 个
 }
-
-# miniupnpd 变体互斥
-EXTRA_OFF = {
-    'extras': ['miniupnpd-iptables'],
+LEGACY = {
+    'tools': ['ttyd', 'wol', 'wifischedule', 'advreboot'],
+    'extras': ['upnp', 'filebrowser'],
 }
 
 
@@ -55,37 +80,58 @@ def set_option(config: str, name: str, value: bool) -> str:
     return '\n'.join(out) + '\n'
 
 
-def configure(group: str, enable: bool) -> None:
-    if group not in GROUPS:
-        print(f'unknown group: {group}', file=sys.stderr)
-        raise SystemExit(2)
+def expand(name: str):
+    if name in LEGACY:
+        result = []
+        for item in LEGACY[name]:
+            result.extend(expand(item))
+        return result
+    if name not in ITEMS:
+        return []
+    return [name]
 
+
+def configure(names, enable: bool) -> None:
     with open('.config', encoding='utf-8') as fh:
         cfg = fh.read()
 
-    for pkg in GROUPS[group]:
-        cfg = set_option(cfg, f'PACKAGE_{pkg}', enable)
-
-    for pkg in EXTRA_PKGS.get(group, []):
-        cfg = set_option(cfg, f'PACKAGE_{pkg}', enable)
-
-    for pkg in EXTRA_OFF.get(group, []):
-        cfg = set_option(cfg, f'PACKAGE_{pkg}', False)
+    done = []
+    for name in names:
+        spec = ITEMS[name]
+        for pkg in spec['luci'] + spec['pkgs']:
+            cfg = set_option(cfg, f'PACKAGE_{pkg}', enable)
+        for pkg in spec['off']:
+            cfg = set_option(cfg, f'PACKAGE_{pkg}', False)
+        done.append(name)
 
     with open('.config', 'w', encoding='utf-8') as fh:
         fh.write(cfg)
 
     state = 'enabled' if enable else 'disabled'
-    print(f'{group}: {state}')
-    for pkg in GROUPS[group]:
-        print(f'  {pkg}')
+    for name in done:
+        spec = ITEMS[name]
+        print(f"{name}: {state}  ({spec['desc']})")
+        for pkg in spec['luci'] + spec['pkgs']:
+            print(f'    {pkg}')
 
 
 def main() -> int:
+    if len(sys.argv) == 1:
+        print('可配置项：')
+        for k, v in ITEMS.items():
+            print(f'  {k:12s} {v["desc"]}')
+        return 0
+
     if len(sys.argv) != 3 or sys.argv[2] not in ('enable', 'disable'):
         print(__doc__, file=sys.stderr)
         return 2
-    configure(sys.argv[1], sys.argv[2] == 'enable')
+
+    names = expand(sys.argv[1])
+    if not names:
+        print(f'unknown item: {sys.argv[1]}', file=sys.stderr)
+        return 2
+
+    configure(names, sys.argv[2] == 'enable')
     return 0
 
 

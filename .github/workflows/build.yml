@@ -52,13 +52,33 @@ on:
         required: true
         default: false
         type: boolean
-      with_tools:
-        description: '加入实用小工具：Web终端/WOL唤醒/WiFi定时/一键进Breed（约 3MB）'
+      with_ttyd:
+        description: 'Web 终端 ttyd（浏览器里打开命令行，约 1MB）'
         required: true
         default: false
         type: boolean
-      with_extras:
-        description: '额外加入 UPnP 端口映射 + FileBrowser 文件管理（约 4MB 界面 + 8MB 内存）'
+      with_wol:
+        description: '网络唤醒 WOL（远程开机局域网设备，约 100KB）'
+        required: true
+        default: false
+        type: boolean
+      with_wifischedule:
+        description: 'WiFi 定时开关（按时间段自动开关无线，约 300KB）'
+        required: true
+        default: false
+        type: boolean
+      with_advreboot:
+        description: '一键重启进 Breed（免按复位键，约 100KB）'
+        required: true
+        default: false
+        type: boolean
+      with_upnp:
+        description: 'UPnP 端口自动映射（内网设备自动开端口，约 1MB 界面 + 3MB 内存）'
+        required: true
+        default: false
+        type: boolean
+      with_filebrowser:
+        description: 'FileBrowser 文件管理（网页版文件管理器，约 3MB 界面 + 5MB 内存）'
         required: true
         default: false
         type: boolean
@@ -141,11 +161,23 @@ jobs:
           WITH_ADBLOCK="${{ github.event.inputs.with_adblock }}"
           if [ -z "$WITH_ADBLOCK" ]; then WITH_ADBLOCK="false"; fi
 
-          WITH_TOOLS="${{ github.event.inputs.with_tools }}"
-          if [ -z "$WITH_TOOLS" ]; then WITH_TOOLS="false"; fi
+          WITH_TTYD="${{ github.event.inputs.with_ttyd }}"
+          if [ -z "$WITH_TTYD" ]; then WITH_TTYD="false"; fi
 
-          WITH_EXTRAS="${{ github.event.inputs.with_extras }}"
-          if [ -z "$WITH_EXTRAS" ]; then WITH_EXTRAS="false"; fi
+          WITH_WOL="${{ github.event.inputs.with_wol }}"
+          if [ -z "$WITH_WOL" ]; then WITH_WOL="false"; fi
+
+          WITH_WIFISCHEDULE="${{ github.event.inputs.with_wifischedule }}"
+          if [ -z "$WITH_WIFISCHEDULE" ]; then WITH_WIFISCHEDULE="false"; fi
+
+          WITH_ADVREBOOT="${{ github.event.inputs.with_advreboot }}"
+          if [ -z "$WITH_ADVREBOOT" ]; then WITH_ADVREBOOT="false"; fi
+
+          WITH_UPNP="${{ github.event.inputs.with_upnp }}"
+          if [ -z "$WITH_UPNP" ]; then WITH_UPNP="false"; fi
+
+          WITH_FILEBROWSER="${{ github.event.inputs.with_filebrowser }}"
+          if [ -z "$WITH_FILEBROWSER" ]; then WITH_FILEBROWSER="false"; fi
 
           WITH_USB="${{ github.event.inputs.with_usb }}"
           if [ -z "$WITH_USB" ]; then WITH_USB="false"; fi
@@ -158,10 +190,16 @@ jobs:
 
           # 8M 可写区仅 320KB，什么都加不了
           if [ "$DEVICE" = "k2-8m" ]; then
-            if [ "$WITH_TOOLS" = "true" ] || [ "$WITH_EXTRAS" = "true" ]; then
-              echo "::warning title=8M 空间不足::k2-8m 可写区仅 320KB，已强制关闭 with_tools 和 with_extras。"
-              WITH_TOOLS="false"
-              WITH_EXTRAS="false"
+            if [ "$WITH_TTYD" = "true" ] || [ "$WITH_WOL" = "true" ] \
+               || [ "$WITH_WIFISCHEDULE" = "true" ] || [ "$WITH_ADVREBOOT" = "true" ] \
+               || [ "$WITH_UPNP" = "true" ] || [ "$WITH_FILEBROWSER" = "true" ]; then
+              echo "::warning title=8M 空间不足::k2-8m 可写区仅 320KB，已强制关闭全部可选组件。"
+              WITH_TTYD="false"
+              WITH_WOL="false"
+              WITH_WIFISCHEDULE="false"
+              WITH_ADVREBOOT="false"
+              WITH_UPNP="false"
+              WITH_FILEBROWSER="false"
             fi
           fi
 
@@ -212,8 +250,12 @@ jobs:
             BASE_IMG=11469641        # 空固件 sysupgrade
             XRAY_ADD=3670016         # xray ~3.5MB
             SSRPLUS_ADD=6160000      # ssr-plus 其余部分 ~5.9MB
-            TOOLS_ADD=3145728        # with_tools ~3MB
-            EXTRAS_ADD=4194304       # with_extras ~4MB
+            TTYD_ADD=1048576         # with_ttyd ~1MB
+            WOL_ADD=102400           # with_wol ~100KB
+            WIFISCHED_ADD=307200     # with_wifischedule ~300KB
+            ADVREBOOT_ADD=102400     # with_advreboot ~100KB
+            UPNP_ADD=1048576         # with_upnp ~1MB
+            FILEBROWSER_ADD=3145728  # with_filebrowser ~3MB
             ADBLOCK_ADD=314572       # with_adblock ~0.3MB
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
@@ -232,8 +274,12 @@ jobs:
               # 没勾 ssr-plus 时，把其余可选项累加后校验
               NEED=$BASE_IMG
               [ "$WITH_XRAY" = "true" ] && NEED=$((NEED + XRAY_ADD))
-              [ "$WITH_TOOLS" = "true" ] && NEED=$((NEED + TOOLS_ADD))
-              [ "$WITH_EXTRAS" = "true" ] && NEED=$((NEED + EXTRAS_ADD))
+              [ "$WITH_TTYD" = "true" ] && NEED=$((NEED + TTYD_ADD))
+              [ "$WITH_WOL" = "true" ] && NEED=$((NEED + WOL_ADD))
+              [ "$WITH_WIFISCHEDULE" = "true" ] && NEED=$((NEED + WIFISCHED_ADD))
+              [ "$WITH_ADVREBOOT" = "true" ] && NEED=$((NEED + ADVREBOOT_ADD))
+              [ "$WITH_UPNP" = "true" ] && NEED=$((NEED + UPNP_ADD))
+              [ "$WITH_FILEBROWSER" = "true" ] && NEED=$((NEED + FILEBROWSER_ADD))
               [ "$WITH_ADBLOCK" = "true" ] && NEED=$((NEED + ADBLOCK_ADD))
 
               echo "=== 16M 空间预算 ==="
@@ -243,15 +289,20 @@ jobs:
 
               if [ "$NEED" -gt "$FW_MAX" ]; then
                 # 按体积从大到小依次放弃
-                if [ "$WITH_EXTRAS" = "true" ]; then
-                  echo "::warning title=16M 装不下 with_extras::已强制关闭 with_extras（约 4MB）"
-                  WITH_EXTRAS="false"
-                  NEED=$((NEED - EXTRAS_ADD))
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_FILEBROWSER" = "true" ]; then
+                  echo "::warning title=16M 装不下 filebrowser::已强制关闭 with_filebrowser（约 3MB）"
+                  WITH_FILEBROWSER="false"
+                  NEED=$((NEED - FILEBROWSER_ADD))
                 fi
-                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TOOLS" = "true" ]; then
-                  echo "::warning title=16M 装不下 with_tools::已强制关闭 with_tools（约 3MB）"
-                  WITH_TOOLS="false"
-                  NEED=$((NEED - TOOLS_ADD))
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TTYD" = "true" ]; then
+                  echo "::warning title=16M 装不下 ttyd::已强制关闭 with_ttyd（约 1MB）"
+                  WITH_TTYD="false"
+                  NEED=$((NEED - TTYD_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_UPNP" = "true" ]; then
+                  echo "::warning title=16M 装不下 upnp::已强制关闭 with_upnp（约 1MB）"
+                  WITH_UPNP="false"
+                  NEED=$((NEED - UPNP_ADD))
                 fi
                 if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_XRAY" = "true" ]; then
                   echo "::warning title=16M 装不下 xray::已强制关闭 with_xray（约 3.5MB）"
@@ -263,7 +314,7 @@ jobs:
                   WITH_ADBLOCK="false"
                   NEED=$((NEED - ADBLOCK_ADD))
                 fi
-                echo "调整后：xray=$WITH_XRAY tools=$WITH_TOOLS extras=$WITH_EXTRAS adblock=$WITH_ADBLOCK"
+                echo "调整后：xray=$WITH_XRAY ttyd=$WITH_TTYD wol=$WITH_WOL wifischedule=$WITH_WIFISCHEDULE advreboot=$WITH_ADVREBOOT upnp=$WITH_UPNP filebrowser=$WITH_FILEBROWSER adblock=$WITH_ADBLOCK"
               fi
             fi
           fi
@@ -274,8 +325,12 @@ jobs:
           echo "keep_sfe=$KEEP_SFE" >> "$GITHUB_OUTPUT"
           echo "with_hnat=$WITH_HNAT" >> "$GITHUB_OUTPUT"
           echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
-          echo "with_tools=$WITH_TOOLS" >> "$GITHUB_OUTPUT"
-          echo "with_extras=$WITH_EXTRAS" >> "$GITHUB_OUTPUT"
+          echo "with_ttyd=$WITH_TTYD" >> "$GITHUB_OUTPUT"
+          echo "with_wol=$WITH_WOL" >> "$GITHUB_OUTPUT"
+          echo "with_wifischedule=$WITH_WIFISCHEDULE" >> "$GITHUB_OUTPUT"
+          echo "with_advreboot=$WITH_ADVREBOOT" >> "$GITHUB_OUTPUT"
+          echo "with_upnp=$WITH_UPNP" >> "$GITHUB_OUTPUT"
+          echo "with_filebrowser=$WITH_FILEBROWSER" >> "$GITHUB_OUTPUT"
           echo "with_usb=$WITH_USB" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
@@ -289,8 +344,12 @@ jobs:
           echo "keep_sfe      : $KEEP_SFE"
           echo "with_hnat     : $WITH_HNAT"
           echo "with_adblock  : $WITH_ADBLOCK"
-          echo "with_tools    : $WITH_TOOLS"
-          echo "with_extras   : $WITH_EXTRAS"
+          echo "with_ttyd     : $WITH_TTYD"
+          echo "with_wol      : $WITH_WOL"
+          echo "with_wifischedule : $WITH_WIFISCHEDULE"
+          echo "with_advreboot: $WITH_ADVREBOOT"
+          echo "with_upnp     : $WITH_UPNP"
+          echo "with_filebrowser : $WITH_FILEBROWSER"
           echo "with_usb      : $WITH_USB"
 
       - name: Free disk space
@@ -479,17 +538,25 @@ jobs:
             python3 ../scripts/configure_fastnat.py disable
           fi
 
-          # 实用小工具 / 附加功能
-          if [ "${{ steps.params.outputs.with_tools }}" = "true" ]; then
-            python3 ../scripts/configure_tools.py tools enable
-          else
-            python3 ../scripts/configure_tools.py tools disable
-          fi
-          if [ "${{ steps.params.outputs.with_extras }}" = "true" ]; then
-            python3 ../scripts/configure_tools.py extras enable
-          else
-            python3 ../scripts/configure_tools.py extras disable
-          fi
+          # 可选组件（逐项独立开关）
+          echo "=== 可选组件 ==="
+          for item in ttyd wol wifischedule advreboot upnp filebrowser; do
+            FLAG="with_${item}"
+            VAL="${{ steps.params.outputs.with_ttyd }}"
+            case "$item" in
+              ttyd)         VAL="${{ steps.params.outputs.with_ttyd }}" ;;
+              wol)          VAL="${{ steps.params.outputs.with_wol }}" ;;
+              wifischedule) VAL="${{ steps.params.outputs.with_wifischedule }}" ;;
+              advreboot)    VAL="${{ steps.params.outputs.with_advreboot }}" ;;
+              upnp)         VAL="${{ steps.params.outputs.with_upnp }}" ;;
+              filebrowser)  VAL="${{ steps.params.outputs.with_filebrowser }}" ;;
+            esac
+            if [ "$VAL" = "true" ]; then
+              python3 ../scripts/configure_tools.py "$item" enable
+            else
+              python3 ../scripts/configure_tools.py "$item" disable
+            fi
+          done
 
           # USB 2.0（仅改装机）
           if [ "${{ steps.params.outputs.with_usb }}" = "true" ]; then
