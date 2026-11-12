@@ -532,6 +532,19 @@ jobs:
             python3 ../scripts/configure_usb.py disable
           fi
 
+          # 包管理器校验：25.12 起官方源只发 apk 格式（packages.adb + index.json），
+          # 不再提供 .ipk 和 Packages.gz。固件必须带 apk，否则装不了任何软件包。
+          echo "=== 包管理器校验 ==="
+          if grep -qE '^CONFIG_PACKAGE_apk-mbedtls=y' .config; then
+            echo "  apk-mbedtls = ON（对接官方 apk 源）"
+          else
+            echo "::error title=缺少包管理器::未启用 apk-mbedtls，固件将无法安装任何软件包（25.12 官方源只发 apk 格式）"
+            exit 1
+          fi
+          if grep -qE '^CONFIG_PACKAGE_opkg=y' .config; then
+            echo "::warning title=opkg 与 apk 并存::25.12 官方源已停止发布 opkg 格式，opkg 装不了任何包，建议关闭"
+          fi
+
           make defconfig
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
