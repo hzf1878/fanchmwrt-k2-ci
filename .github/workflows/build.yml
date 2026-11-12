@@ -47,11 +47,6 @@ on:
         required: true
         default: true
         type: boolean
-      with_adblock:
-        description: '加入 adblock-fast 广告过滤（DNS 层，约 300KB，与代理无冲突）'
-        required: true
-        default: false
-        type: boolean
       with_ttyd:
         description: 'Web 终端 ttyd（浏览器里打开命令行，约 470KB）'
         required: true
@@ -158,9 +153,6 @@ jobs:
           WITH_HNAT="${{ github.event.inputs.with_hnat }}"
           if [ -z "$WITH_HNAT" ]; then WITH_HNAT="true"; fi
 
-          WITH_ADBLOCK="${{ github.event.inputs.with_adblock }}"
-          if [ -z "$WITH_ADBLOCK" ]; then WITH_ADBLOCK="false"; fi
-
           WITH_TTYD="${{ github.event.inputs.with_ttyd }}"
           if [ -z "$WITH_TTYD" ]; then WITH_TTYD="false"; fi
 
@@ -201,12 +193,6 @@ jobs:
               WITH_UPNP="false"
               WITH_FILEBROWSER="false"
             fi
-          fi
-
-          # 8M 可写区仅 320KB，规则文件放不下
-          if [ "$WITH_ADBLOCK" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
-            echo "::warning title=8M 空间不足::adblock-fast 规则文件需数 MB，k2-8m 可写区仅 320KB，已强制关闭 with_adblock。"
-            WITH_ADBLOCK="false"
           fi
 
           # 8M：两个都装不下，强制关闭
@@ -258,7 +244,6 @@ jobs:
             ADVREBOOT_ADD=13000      # with_advreboot   纯脚本，无二进制
             UPNP_ADD=164000          # with_upnp  miniupnpd 154KB + 界面 10KB
             FILEBROWSER_ADD=1100     # with_filebrowser 只有界面，无二进制
-            ADBLOCK_ADD=314572       # with_adblock ~0.3MB
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
             if [ "$WITH_SSRPLUS" = "true" ]; then
@@ -282,7 +267,6 @@ jobs:
               [ "$WITH_ADVREBOOT" = "true" ] && NEED=$((NEED + ADVREBOOT_ADD))
               [ "$WITH_UPNP" = "true" ] && NEED=$((NEED + UPNP_ADD))
               [ "$WITH_FILEBROWSER" = "true" ] && NEED=$((NEED + FILEBROWSER_ADD))
-              [ "$WITH_ADBLOCK" = "true" ] && NEED=$((NEED + ADBLOCK_ADD))
 
               echo "=== 16M 空间预算 ==="
               echo "分区上界   : $FW_MAX"
@@ -306,12 +290,7 @@ jobs:
                   WITH_UPNP="false"
                   NEED=$((NEED - UPNP_ADD))
                 fi
-                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_ADBLOCK" = "true" ]; then
-                  echo "::warning title=16M 装不下 adblock::已强制关闭 with_adblock"
-                  WITH_ADBLOCK="false"
-                  NEED=$((NEED - ADBLOCK_ADD))
-                fi
-                echo "调整后：xray=$WITH_XRAY ttyd=$WITH_TTYD wol=$WITH_WOL wifischedule=$WITH_WIFISCHEDULE advreboot=$WITH_ADVREBOOT upnp=$WITH_UPNP filebrowser=$WITH_FILEBROWSER adblock=$WITH_ADBLOCK"
+                echo "调整后：xray=$WITH_XRAY ttyd=$WITH_TTYD wol=$WITH_WOL wifischedule=$WITH_WIFISCHEDULE advreboot=$WITH_ADVREBOOT upnp=$WITH_UPNP filebrowser=$WITH_FILEBROWSER"
               fi
             fi
           fi
@@ -321,7 +300,6 @@ jobs:
           echo "with_ss_full=$WITH_SS_FULL" >> "$GITHUB_OUTPUT"
           echo "keep_sfe=$KEEP_SFE" >> "$GITHUB_OUTPUT"
           echo "with_hnat=$WITH_HNAT" >> "$GITHUB_OUTPUT"
-          echo "with_adblock=$WITH_ADBLOCK" >> "$GITHUB_OUTPUT"
           echo "with_ttyd=$WITH_TTYD" >> "$GITHUB_OUTPUT"
           echo "with_wol=$WITH_WOL" >> "$GITHUB_OUTPUT"
           echo "with_wifischedule=$WITH_WIFISCHEDULE" >> "$GITHUB_OUTPUT"
@@ -340,7 +318,6 @@ jobs:
           echo "with_ss_full  : $WITH_SS_FULL"
           echo "keep_sfe      : $KEEP_SFE"
           echo "with_hnat     : $WITH_HNAT"
-          echo "with_adblock  : $WITH_ADBLOCK"
           echo "with_ttyd     : $WITH_TTYD"
           echo "with_wol      : $WITH_WOL"
           echo "with_wifischedule : $WITH_WIFISCHEDULE"
@@ -520,13 +497,6 @@ jobs:
             python3 ../scripts/configure_ss_full.py disable
           fi
 
-          # DNS 层广告过滤
-          if [ "${{ steps.params.outputs.with_adblock }}" = "true" ]; then
-            python3 ../scripts/configure_adblock.py enable
-          else
-            python3 ../scripts/configure_adblock.py disable
-          fi
-
           # HNAT/fastnat 界面：必须在 configure_ssrplus.py 之后执行，
           # 后者在关 SFE 时会一并关掉 luci-app-fwx-fastnat
           if [ "${{ steps.params.outputs.with_hnat }}" = "true" ]; then
@@ -586,15 +556,6 @@ jobs:
                    luci-app-advanced-reboot luci-app-upnp luci-app-filebrowser; do
             if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
               echo "  $p = ON"
-            fi
-          done
-
-          echo "=== 广告过滤 ==="
-          for p in adblock-fast luci-app-adblock-fast; do
-            if grep -qE "^CONFIG_PACKAGE_$p=y" .config; then
-              echo "  $p = ON"
-            else
-              echo "  $p = off"
             fi
           done
 

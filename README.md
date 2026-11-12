@@ -40,7 +40,6 @@
 | `with_ss_full` | 关 | 额外加入 SS/SSR 内核（约 7MB，仅 32M） |
 | `keep_sfe` | **开** | 保留 SFE 加速。与 TPROXY 冲突，见下文 |
 | `with_hnat` | **开** | 加入 fastnat 加速面板（软件快速路径） |
-| `with_adblock` | 关 | 加入 adblock-fast DNS 广告过滤 |
 | `with_ttyd` | 关 | Web 终端 ttyd（约 470KB） |
 | `with_wol` | 关 | 网络唤醒 WOL（约 18KB） |
 | `with_wifischedule` | 关 | WiFi 定时开关（约 6KB） |
@@ -58,7 +57,6 @@ with_ssrplus=true, with_xray=false   → 自动开启 with_xray（ssr-plus 需�
 with_ss_full=true, with_ssrplus=false → 自动关闭 with_ss_full（内核脱离界面无意义）
 with_ss_full=true, device≠k2-32m      → 强制关闭（7MB 放不下）
 with_ssrplus=true, device=k2-16m      → 强制关闭 with_ssrplus 和 with_xray（见空间限制）
-with_adblock=true, device=k2-8m       → 强制关闭（规则文件需数 MB）
 with_ttyd/wol/wifischedule/advreboot/upnp/filebrowser=true, device=k2-8m
                                        → 强制关闭（可写区仅 320KB）
 with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启用 ehci/ohci）
@@ -73,7 +71,6 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | `with_hnat` | ✅ | ✅ | ✅ |
 | `keep_sfe` | ✅ | ✅ | ✅ |
 | `with_xray` | ❌ 强制关闭 | ⚠️ 可用（余约 1.2MB） | ✅ 可用 |
-| `with_adblock` | ❌ 强制关闭 | ✅ 可用 | ✅ 可用 |
 | `with_ttyd` | ❌ 强制关闭 | ✅ 可用（470KB） | ✅ 可用 |
 | `with_wol` | ❌ 强制关闭 | ✅ 可用（18KB） | ✅ 可用 |
 | `with_wifischedule` | ❌ 强制关闭 | ✅ 可用（6KB） | ✅ 可用 |
@@ -92,7 +89,6 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 ① 关 with_xray（3.5MB）
 ② 关 with_ttyd（470KB）
 ③ 关 with_upnp（160KB）
-④ 关 with_adblock（0.3MB）
 ```
 
 每次降级都会在日志里输出 `::warning`，说明关了哪项、原本会超多少。
@@ -103,7 +99,6 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | 用途 | `k2-8m` | `k2-16m` | `k2-32m` |
 |---|---|---|---|
 | 纯路由（最快） | 默认即可 | 默认即可 | 默认即可 |
-| 加广告过滤 | — | + `with_adblock` | + `with_adblock` |
 | 加 Web 终端 | — | + `with_ttyd` | + `with_ttyd` |
 | 加常用工具 | — | + `with_ttyd` + `with_wol` + `with_advreboot` | 同左 |
 | 跑 trojan | — | + `with_xray`，`keep_sfe` 取消 | + `with_xray` + `with_ssrplus` |
@@ -125,7 +120,6 @@ with_usb=true, device≠k2-32m         → 强制关闭（仅 k2-32m 的 DTS 启
 | + `with_xray` | 约 3.5 MB | 约 14.4 MB | ✅ 余约 1.2MB |
 | + `with_ssrplus` | 再 +5.9 MB | **20.3 MB** | ❌ **超 4.8MB** |
 | + `with_ss_full` | 再 +7 MB | 约 27 MB | ❌ 仅 32M |
-| + `with_adblock` | 约 0.3 MB | +0.3 MB | ✅ |
 
 **关键结论**：
 
@@ -181,7 +175,6 @@ scripts/register_device.py           注册 16M/32M 设备到 mt7620.mk（幂等
 scripts/configure_ssrplus.py         ssr-plus 开关、helloworld feed、SFE 取舍
 scripts/configure_ss_full.py         SS/SSR 内核（必须在 ssrplus 之后执行）
 scripts/configure_fastnat.py         fastnat 面板（只控界面，不碰内核模块）
-scripts/configure_adblock.py         DNS 层广告过滤
 scripts/configure_tools.py           可选组件逐项开关（ttyd/wol/wifischedule/
                                      advreboot/upnp/filebrowser）
 scripts/configure_usb.py             USB 2.0 支持（仅改装机）
