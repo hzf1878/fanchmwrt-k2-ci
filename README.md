@@ -307,14 +307,69 @@ MT7620A 支持上限 256MB DDR2（16 位位宽）。
 - 刷写前在 Breed 里备份当前固件，出问题可回退
 - 16M/32M 版刷入前确认分区表已正确（`cat /proc/mtd` 看 firmware 大小）
 
+## 软件包管理（apk）
+
+**OpenWrt 25.12 起官方源只发布 apk 格式**（`packages.adb` + `index.json`），
+不再提供 `.ipk` 和 `Packages.gz`。本固件因此使用 `apk` 而非 `opkg`。
+
+实测分界线：
+
+| 版本 | `Packages.gz`（opkg） | `packages.adb`（apk） |
+|---|---|---|
+| 23.05.5 / 24.10.8 | ✅ 200 | ❌ 404 |
+| 25.12.0 / 25.12.6 | ❌ 404 | ✅ 200 |
+
+### 命令对照
+
+| 用途 | opkg | apk |
+|---|---|---|
+| 更新索引 | `opkg update` | `apk update` |
+| 安装 | `opkg install 包名` | `apk add 包名` |
+| 删除 | `opkg remove 包名` | `apk del 包名` |
+| 已装列表 | `opkg list-installed` | `apk list --installed` |
+| 搜索 | `opkg list \| grep 关键词` | `apk search 关键词` |
+| 查看信息 | `opkg info 包名` | `apk info 包名` |
+| 升级全部 | `opkg upgrade` | `apk upgrade` |
+| 清理缓存 | `rm -rf /var/opkg-lists` | `apk cache clean` |
+
+### 常用示例
+
+```sh
+apk update                      # 拉取索引（首次必做）
+apk add htop tcpdump            # 装多个
+apk add --no-cache curl         # 不保留缓存，省空间
+apk info -L 包名                # 查看包内文件列表
+apk del --purge 包名            # 连配置一起删
+```
+
+### 手动安装本地包
+
+```sh
+apk add --allow-untrusted /tmp/xxx.apk
+```
+
+`.apk` 是 tar.gz 格式，也可以用 `tar tzf xxx.apk` 看内容。
+
+### 为什么不能沿用 opkg
+
+即使固件里还留着 `opkg`，也装不了任何东西：源上没有 `Packages.gz`，
+`opkg update` 全部 404，`/var/opkg-lists/` 永远是空的。
+此时 `opkg install` 连本地 `.ipk` 都会报
+`incompatible with the architectures configured` ——
+因为索引为空时它无法确认 `mipsel_24kc` 是合法架构。
+
+另外，固件的 `/usr/lib/opkg/status` 只有 `Conffiles:` 段、没有任何
+`Package:` 记录，这是 OpenWrt 的正常行为：**编译进镜像的包不写入 opkg 数据库**，
+只有事后用 opkg 装的才写。所以全新刷机后 `opkg list-installed` 为空不是故障。
+
 ## 已知限制
 
-- K2 只有 64MB 内存，跑满 LuCI 后余量紧张（实测启动后用掉约 63%）
+- 原厂 64MB 内存版本跑满 LuCI 后余量紧张；改装 256MB 版无此问题
 - 8MB 版 JFFS2 需要至少 5 个 64KB 块（约 320KB）才能挂载，低于此值
   overlay 会退化到 `/tmp/root` 导致配置不保存
 - 16MB 装不了 ssr-plus（超 4.8MB），已自动降级
 - 换大容量芯片后如果仍用原厂 U-Boot，可能无法识别新容量，建议刷 Breed
-- MT7620A 是**单核** 580MHz，RPS / SMP affinity 之类的多核调优无效
+- MT7620A 是**单核**，默认 580MHz（Breed 可超至 620MHz），RPS / SMP affinity 之类的多核调优无效
 - MT7620A **无 PPE 硬件加速**，所谓 HNAT 在此平台是软件实现
 - Kcptun / xkcptun 类 UDP 加速在单核 580MHz 上会严重拖慢路由，不建议使用
 
