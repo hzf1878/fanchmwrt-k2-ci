@@ -349,10 +349,20 @@ jobs:
 
       - name: Free disk space
         run: |
+          # 注意：不能整目录删 $AGENT_TOOLSDIRECTORY（= /opt/hostedtoolcache）。
+          # runner 预装的 Go 工具链就在 $AGENT_TOOLSDIRECTORY/go 下面，
+          # 而 Fix Go module cache 步骤需要用它来补 xray 的模块缓存。
+          # 之前整目录 rm -rf 把 go 一起删了，导致 #28 / #29 找不到 go。
+          # 这里只删 go 以外的内容。
+          sudo find "$AGENT_TOOLSDIRECTORY" -mindepth 1 -maxdepth 1 \
+            ! -name 'go' -exec rm -rf {} + || true
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+            /usr/local/share/boost || true
           sudo apt-get clean
           df -h /
+
+          echo "=== 保留的 Go 工具链 ==="
+          ls -d "$AGENT_TOOLSDIRECTORY"/go/* 2>/dev/null | head -5 || echo "无"
 
       - name: Install dependencies
         run: |
@@ -653,8 +663,9 @@ jobs:
           # 最终编 xray 的还是 openwrt 自己那套工具链。
           GO_BIN=""
           for c in \
-            /usr/local/go/bin/go \
+            "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}"/go/*/bin/go \
             /opt/hostedtoolcache/go/*/bin/go \
+            /usr/local/go/bin/go \
             /usr/lib/go*/bin/go ; do
             if [ -x "$c" ]; then GO_BIN="$c"; break; fi
           done
