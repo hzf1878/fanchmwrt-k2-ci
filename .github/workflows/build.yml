@@ -631,8 +631,19 @@ jobs:
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s
-          find dl -size -1024c -exec rm -f {} \;
+          # 清理下载失败的 0 字节/半截文件。
+          # 原先是 find dl -size -1024c -exec rm -f {} \;
+          # —— 这个会把 dl/go-mod-cache 里所有小于 1KB 的 Go 源文件
+          # 当成"下载不完整的垃圾"删掉！sing 的 common/debug 是
+          # 54 字节的 build-tag 存根、common/auth 是 319~624 字节，
+          # utls 的 internal/hkdf 是 417 字节……全被删了，于是
+          # go 报 "no required module provides package ..."。
+          # 这才是 #24 起 xray 一直编不过的真正原因。
+          # 现在只清空真正的坏包（.tar.*/.zip 且为 0 字节），
+          # 并且排除 go-mod-cache 目录。
+          find dl -maxdepth 1 -type f -size 0 -exec rm -f {} \;
           echo "download dir: $(du -sh dl | cut -f1)"
+          echo "go-mod-cache: $(du -sh dl/go-mod-cache 2>/dev/null | cut -f1 || echo 无)"
 
       # Go 包（xray-core）的模块缓存经常不自洽：dl/go-mod-cache 里
       # 有的模块是新版本，但主模块 go.mod 没声明拆分出去的子模块，
@@ -719,11 +730,36 @@ jobs:
           go version
           echo "=== GOTOOLCHAIN=$GOTOOLCHAIN GOPROXY=$GOPROXY ==="
 
-          echo "=== 修复前：go mod verify ==="
-          ( cd "$XRAY" && go mod tidy 2>&1 | tail -30 ) || true
+          echo "=== 源文件是否完整（这是关键）==="
+          # go-mod-cache 里的模块往往是 vendored 的完整模块，
+          # 但历史上被 find dl -size -1024c 删掉过小文件。
+          # 这里直接检查 sing / protobuf / utls 的关键目录是否有内容。
+          GMC="$GOMODCACHE"
+          for d in \
+            "$GMC/github.com/sagernet/sing@v0.5.1/common/debug" \
+            "$GMC/github.com/sagernet/sing@v0.5.1/common/auth" \
+            "$GMC/github.com/sagernet/sing@v0.5.1/common/logger" \
+            "$GMC/google.golang.org/protobuf@v1.36.11/internal/editiondefaults" \
+            "$GMC/github.com/refraction-networking/utls@v1.8.3-0.20260301010127-aa6edf4b11af/internal/hkdf" ; do
+            if [ -d "$d" ]; then
+              echo "  $d : $(ls "$d" | wc -l) 个文件"
+            else
+              echo "  $d : 目录不存在"
+            fi
+          done
+
+          echo "=== 目录内容确认 ==="
+          ls -la "$XRAY" | head -12
+          if [ ! -f "$XRAY/go.mod" ]; then
+            echo "  注意：$XRAY 下没有 go.mod（openwrt 在编译时才生成），"
+            echo "  跳过 tidy/download，只做缓存完整性检查与补下载。"
+          fi
+
+          echo "=== go mod tidy ==="
+          ( cd "$XRAY" && [ -f go.mod ] && go mod tidy 2>&1 | tail -30 ) || true
 
           echo "=== 强制下载全部依赖到缓存 ==="
-          ( cd "$XRAY" && go mod download all 2>&1 | tail -20 ) || true
+          ( cd "$XRAY" && [ -f go.mod ] && go mod download all 2>&1 | tail -20 ) || true
 
           echo "=== 校验关键包是否已可解析 ==="
           for m in google.golang.org/protobuf/internal/editiondefaults \
