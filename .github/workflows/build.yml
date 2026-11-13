@@ -642,8 +642,32 @@ jobs:
             exit 0
           fi
 
-          # Go 工具链由 openwrt 的 hostpkg 提供
-          export PATH="$PWD/staging_dir/hostpkg/lib/go-1.26/bin:$PWD/staging_dir/host/bin:$PATH"
+          # Go 工具链位置在不同 openwrt 版本里不一样，逐个探测。
+          # 之前硬编码 staging_dir/hostpkg/lib/go-1.26/bin 找不到，
+          # 导致整个步骤被静默跳过（#27 就是这种情况）。
+          GO_BIN=""
+          for c in \
+            staging_dir/hostpkg/bin/go \
+            staging_dir/hostpkg/go/bin/go \
+            staging_dir/hostpkg/lib/go-*/bin/go \
+            staging_dir/host/bin/go \
+            staging_dir/host/go/bin/go \
+            staging_dir/host/lib/go-*/bin/go \
+            staging_dir/target-*/go/bin/go ; do
+            if [ -x "$c" ]; then GO_BIN="$c"; break; fi
+          done
+          if [ -z "$GO_BIN" ]; then
+            GO_BIN=$(find staging_dir -maxdepth 5 -type f -name go -perm -u+x 2>/dev/null | head -1)
+          fi
+          if [ -z "$GO_BIN" ]; then
+            echo "::error title=找不到 go 工具链::xray-core 无法修复，构建很可能再次失败"
+            echo "staging_dir 下 go 相关路径："
+            find staging_dir -maxdepth 4 -name "go*" 2>/dev/null | head -20
+            exit 1
+          fi
+          export PATH="$(dirname "$GO_BIN"):$PATH"
+          echo "使用 go: $GO_BIN"
+
           export GO_MOD_CACHE_DIR="$PWD/dl/go-mod-cache"
           export GO_BUILD_CACHE_DIR="$PWD/tmp/go-build"
           export GOMODCACHE="$GO_MOD_CACHE_DIR"
@@ -652,11 +676,7 @@ jobs:
           export GOFLAGS="-mod=mod"
           export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
           export GOSUMDB=off
-
-          if ! command -v go >/dev/null 2>&1; then
-            echo "::warning title=没有 go 工具链::跳过 go mod tidy，xray 可能仍会失败"
-            exit 0
-          fi
+          mkdir -p "$GOMODCACHE" "$GOCACHE" "$GOPATH"
 
           echo "=== go 版本 ==="
           go version
@@ -681,6 +701,33 @@ jobs:
 
           echo "=== go-mod-cache 体积 ==="
           du -sh "$GOMODCACHE" 2>/dev/null || true
+
+          # 真正决定成败的检查：能否把缺失的子模块解析出来。
+          # 这些包名来自 #24 / #25 的报错，缺一个 xray 就编不过。
+          echo "=== 关键缺失包解析检查 ==="
+          MISSING=0
+          for p in \
+            google.golang.org/protobuf/internal/editiondefaults \
+            google.golang.org/protobuf/internal/editionssupport \
+            github.com/sagernet/sing/common/debug \
+            github.com/sagernet/sing/common/auth \
+            github.com/sagernet/sing/common/logger \
+            github.com/refraction-networking/utls/internal/helper \
+            github.com/refraction-networking/utls/internal/hkdf ; do
+            if ( cd "$XRAY" && go list "$p" >/dev/null 2>&1 ); then
+              echo "  OK      $p"
+            else
+              echo "  MISSING $p"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          echo "缺失数量: $MISSING / 7"
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::warning title=部分 Go 依赖仍未补齐::$MISSING 个包无法解析，xray 可能仍会失败。详见本步骤日志。"
+            ( cd "$XRAY" && go list ./... 2>&1 | head -30 ) || true
+          else
+            echo "=== 全部依赖可解析，xray 应该能编过 ==="
+          fi
 
       - name: Compile firmware
         run: |
