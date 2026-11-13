@@ -642,26 +642,48 @@ jobs:
             exit 0
           fi
 
-          # Go 工具链位置在不同 openwrt 版本里不一样，逐个探测。
-          # 之前硬编码 staging_dir/hostpkg/lib/go-1.26/bin 找不到，
-          # 导致整个步骤被静默跳过（#27 就是这种情况）。
+          # Go 工具链探测。
+          # 教训一：staging_dir/hostpkg/lib/go-1.26/bin 这个路径不存在，
+          #         导致 #27 整个步骤被静默跳过。
+          # 教训二：Download package sources 之后，openwrt 自己的 go
+          #         还没编译出来（golang1.26 是编译阶段才 Installing 的），
+          #         staging_dir 里根本没有 go —— #28 就是这么失败的。
+          # 所以这里优先用 GitHub runner 预装的 go。它只用来在 x86_64
+          # 上做 go mod tidy / download 补全模块缓存，不参与交叉编译，
+          # 最终编 xray 的还是 openwrt 自己那套工具链。
           GO_BIN=""
           for c in \
-            staging_dir/hostpkg/bin/go \
-            staging_dir/hostpkg/go/bin/go \
-            staging_dir/hostpkg/lib/go-*/bin/go \
-            staging_dir/host/bin/go \
-            staging_dir/host/go/bin/go \
-            staging_dir/host/lib/go-*/bin/go \
-            staging_dir/target-*/go/bin/go ; do
+            /usr/local/go/bin/go \
+            /opt/hostedtoolcache/go/*/bin/go \
+            /usr/lib/go*/bin/go ; do
             if [ -x "$c" ]; then GO_BIN="$c"; break; fi
           done
           if [ -z "$GO_BIN" ]; then
-            GO_BIN=$(find staging_dir -maxdepth 5 -type f -name go -perm -u+x 2>/dev/null | head -1)
+            RG=$(command -v go 2>/dev/null || true)
+            [ -n "$RG" ] && GO_BIN="$RG"
+          fi
+          # 最后才退回 openwrt 自己的 go（通常此时还不存在）
+          if [ -z "$GO_BIN" ]; then
+            for c in \
+              staging_dir/hostpkg/bin/go \
+              staging_dir/hostpkg/go/bin/go \
+              staging_dir/hostpkg/lib/go-*/bin/go \
+              staging_dir/host/bin/go \
+              staging_dir/host/go/bin/go \
+              staging_dir/host/lib/go-*/bin/go \
+              staging_dir/target-*/go/bin/go ; do
+              if [ -x "$c" ]; then GO_BIN="$c"; break; fi
+            done
           fi
           if [ -z "$GO_BIN" ]; then
             echo "::error title=找不到 go 工具链::xray-core 无法修复，构建很可能再次失败"
-            echo "staging_dir 下 go 相关路径："
+            echo "=== runner 上 go 的可能位置 ==="
+            ls -la /usr/local/go/bin/go 2>&1 | head -2
+            ls -d /opt/hostedtoolcache/go/*/bin 2>&1 | head -5
+            which -a go 2>&1 | head -5
+            echo "=== 工具缓存目录 ==="
+            ls -d "${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"/go/* 2>&1 | head -5
+            echo "=== staging_dir 下 go 相关路径 ==="
             find staging_dir -maxdepth 4 -name "go*" 2>/dev/null | head -20
             exit 1
           fi
@@ -676,10 +698,15 @@ jobs:
           export GOFLAGS="-mod=mod"
           export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
           export GOSUMDB=off
+          # xray-core 的 go.mod 要求较新的 Go（1.26 级别）。
+          # runner 预装的 go 可能偏旧，auto 允许它按需下载匹配的工具链，
+          # 只用于 tidy/download，不影响最终交叉编译。
+          export GOTOOLCHAIN="${GOTOOLCHAIN:-auto}"
           mkdir -p "$GOMODCACHE" "$GOCACHE" "$GOPATH"
 
           echo "=== go 版本 ==="
           go version
+          echo "=== GOTOOLCHAIN=$GOTOOLCHAIN GOPROXY=$GOPROXY ==="
 
           echo "=== 修复前：go mod verify ==="
           ( cd "$XRAY" && go mod tidy 2>&1 | tail -30 ) || true
