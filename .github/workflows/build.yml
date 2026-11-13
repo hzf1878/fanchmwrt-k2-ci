@@ -624,6 +624,64 @@ jobs:
           find dl -size -1024c -exec rm -f {} \;
           echo "download dir: $(du -sh dl | cut -f1)"
 
+      # Go 包（xray-core）的模块缓存经常不自洽：dl/go-mod-cache 里
+      # 有的模块是新版本，但主模块 go.mod 没声明拆分出去的子模块，
+      # 于是 go 报 "no required module provides package ..."。
+      # 典型：google.golang.org/protobuf@v1.36.11 里的
+      # internal/editiondefaults / internal/editionssupport 已成为
+      # 独立模块；sagernet/sing 的 common/debug、utls 的 internal/boring
+      # 同理。这里在编译前用 -mod=mod 让 go 自己补齐依赖，
+      # 并把缺失的模块真正下载进缓存。
+      - name: Fix Go module cache (xray-core)
+        run: |
+          cd openwrt
+          XRAY=feeds/packages/net/xray-core
+
+          if [ ! -d "$XRAY" ]; then
+            echo "没有 xray-core 目录，跳过"
+            exit 0
+          fi
+
+          # Go 工具链由 openwrt 的 hostpkg 提供
+          export PATH="$PWD/staging_dir/hostpkg/lib/go-1.26/bin:$PWD/staging_dir/host/bin:$PATH"
+          export GO_MOD_CACHE_DIR="$PWD/dl/go-mod-cache"
+          export GO_BUILD_CACHE_DIR="$PWD/tmp/go-build"
+          export GOMODCACHE="$GO_MOD_CACHE_DIR"
+          export GOCACHE="$GO_BUILD_CACHE_DIR"
+          export GOPATH="$PWD/tmp/gopath"
+          export GOFLAGS="-mod=mod"
+          export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
+          export GOSUMDB=off
+
+          if ! command -v go >/dev/null 2>&1; then
+            echo "::warning title=没有 go 工具链::跳过 go mod tidy，xray 可能仍会失败"
+            exit 0
+          fi
+
+          echo "=== go 版本 ==="
+          go version
+
+          echo "=== 修复前：go mod verify ==="
+          ( cd "$XRAY" && go mod tidy 2>&1 | tail -30 ) || true
+
+          echo "=== 强制下载全部依赖到缓存 ==="
+          ( cd "$XRAY" && go mod download all 2>&1 | tail -20 ) || true
+
+          echo "=== 校验关键包是否已可解析 ==="
+          for m in google.golang.org/protobuf/internal/editiondefaults \
+                   github.com/sagernet/sing/common/debug \
+                   github.com/refraction-networking/utls/internal/boring; do
+            if [ -d "$GOMODCACHE/${m%@*}" ] || ls -d "$GOMODCACHE"/*"${m%%/*}"* >/dev/null 2>&1; then
+              :
+            fi
+          done
+
+          echo "=== 修复后：go list 检查 xray 主包 ==="
+          ( cd "$XRAY" && go list ./... 2>&1 | tail -30 ) || true
+
+          echo "=== go-mod-cache 体积 ==="
+          du -sh "$GOMODCACHE" 2>/dev/null || true
+
       - name: Compile firmware
         run: |
           cd openwrt
