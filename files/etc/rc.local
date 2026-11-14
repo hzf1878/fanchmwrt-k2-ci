@@ -13,4 +13,8 @@
 # 而 opkg 的 info 目录里也没有 —— 内核模块明明已加载却报"缺失基础依赖"。
 /usr/bin/ssr-dep-fix.sh
 
+# U 盘自动挂载兜底
+# fstab 服务跑得太早，USB 存储可能还没枚举完，这里再兜一次。
+/usr/bin/usb-automount.sh
+
 exit 0
