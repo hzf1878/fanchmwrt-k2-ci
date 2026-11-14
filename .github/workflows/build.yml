@@ -94,6 +94,16 @@ on:
         required: true
         default: false
         type: boolean
+      with_exfat:
+        description: 'exFAT 支持（约 152KB）。依赖 with_usb，未开启 USB 时自动忽略'
+        required: true
+        default: false
+        type: boolean
+      with_ntfs:
+        description: 'NTFS 支持（约 1.18MB，内核 ntfs3 读写 + mkntfs/ntfsfix）。依赖 with_usb，未开启 USB 时自动忽略'
+        required: true
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -189,10 +199,27 @@ jobs:
           WITH_USB="${{ github.event.inputs.with_usb }}"
           if [ -z "$WITH_USB" ]; then WITH_USB="false"; fi
 
+          WITH_EXFAT="${{ github.event.inputs.with_exfat }}"
+          if [ -z "$WITH_EXFAT" ]; then WITH_EXFAT="false"; fi
+
+          WITH_NTFS="${{ github.event.inputs.with_ntfs }}"
+          if [ -z "$WITH_NTFS" ]; then WITH_NTFS="false"; fi
+
           # USB 只有 k2-32m 的 DTS 启用了 &ehci / &ohci
           if [ "$WITH_USB" = "true" ] && [ "$DEVICE" != "k2-32m" ]; then
             echo "::warning title=USB 仅 k2-32m 支持::$DEVICE 的 DTS 未启用 ehci/ohci，已强制关闭 with_usb。"
             WITH_USB="false"
+          fi
+
+          # exFAT / NTFS 只在接 U 盘时才有用，必须跟着 with_usb。
+          # USB 没开（或因为设备不支持被上面关掉）时，这两个一律强制关闭，
+          # 避免出现"固件里有 NTFS 驱动但没有 USB 控制器"这种无用组合。
+          if [ "$WITH_USB" != "true" ]; then
+            if [ "$WITH_EXFAT" = "true" ] || [ "$WITH_NTFS" = "true" ]; then
+              echo "::warning title=exFAT/NTFS 需要 USB::未启用 with_usb，已强制关闭 with_exfat / with_ntfs。它们只对 U 盘/移动硬盘有意义。"
+              WITH_EXFAT="false"
+              WITH_NTFS="false"
+            fi
           fi
 
           # 8M 可写区仅 320KB，什么都加不了
@@ -327,6 +354,8 @@ jobs:
           echo "with_filebrowser=$WITH_FILEBROWSER" >> "$GITHUB_OUTPUT"
           echo "with_ftp=$WITH_FTP" >> "$GITHUB_OUTPUT"
           echo "with_usb=$WITH_USB" >> "$GITHUB_OUTPUT"
+          echo "with_exfat=$WITH_EXFAT" >> "$GITHUB_OUTPUT"
+          echo "with_ntfs=$WITH_NTFS" >> "$GITHUB_OUTPUT"
 
           echo "Device        : $DEVICE"
           echo "Config hash   : $CFG_HASH"
@@ -346,6 +375,8 @@ jobs:
           echo "with_filebrowser : $WITH_FILEBROWSER"
           echo "with_ftp      : $WITH_FTP"
           echo "with_usb      : $WITH_USB"
+          echo "with_exfat    : $WITH_EXFAT"
+          echo "with_ntfs     : $WITH_NTFS"
 
       - name: Free disk space
         run: |
@@ -564,6 +595,29 @@ jobs:
           else
             python3 ../scripts/configure_usb.py disable
           fi
+
+          # exFAT / NTFS：只在 USB 开启时才有意义。
+          # 参数阶段已保证 with_usb=false 时这两个也是 false，
+          # 这里再做一次断言，防止改动顺序时漏掉。
+          USB_ON="${{ steps.params.outputs.with_usb }}"
+          for fs in exfat ntfs; do
+            if [ "$fs" = "exfat" ]; then
+              VAL="${{ steps.params.outputs.with_exfat }}"
+            else
+              VAL="${{ steps.params.outputs.with_ntfs }}"
+            fi
+
+            if [ "$VAL" = "true" ] && [ "$USB_ON" != "true" ]; then
+              echo "::error title=配置冲突::with_$fs=true 但 with_usb 未开启，必须同时勾选 USB。"
+              exit 1
+            fi
+
+            if [ "$VAL" = "true" ]; then
+              python3 ../scripts/configure_fs.py "$fs" enable
+            else
+              python3 ../scripts/configure_fs.py "$fs" disable
+            fi
+          done
 
           # 包管理器校验：25.12 起官方源只发 apk 格式（packages.adb + index.json），
           # 不再提供 .ipk 和 Packages.gz。固件必须带 apk，否则装不了任何软件包。
@@ -883,7 +937,7 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_ss_full == 'true' && '-full' || (steps.params.outputs.with_ssrplus == 'true' && '-ssrplus' || (steps.params.outputs.with_xray == 'true' && '-xray' || '')) }}
+          name: FanchmWrt-K2-${{ steps.params.outputs.device }}${{ steps.params.outputs.with_ss_full == 'true' && '-full' || (steps.params.outputs.with_ssrplus == 'true' && '-ssrplus' || (steps.params.outputs.with_xray == 'true' && '-xray' || '')) }}${{ steps.params.outputs.with_usb == 'true' && '-usb' || '' }}${{ steps.params.outputs.with_exfat == 'true' && '-exfat' || '' }}${{ steps.params.outputs.with_ntfs == 'true' && '-ntfs' || '' }}
           path: output/*
           retention-days: 30
 
