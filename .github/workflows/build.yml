@@ -410,6 +410,17 @@ jobs:
           cd openwrt
           echo "Upstream commit: $(git log --oneline -1)"
 
+          # OpenWrt 打包时会把源码根目录的 files/ 覆盖进 rootfs。
+          # 仓库里的 files/ 放自定义脚本与配置（如 ssr-dep-fix.sh、
+          # rc.local），避免每次刷机后还要手工补一遍。
+          if [ -d ../files ]; then
+            cp -a ../files/. ./
+            echo "=== 已合入 files/ 覆盖层 ==="
+            find files -type f | sort
+          else
+            echo "未找到 files/ 目录，跳过自定义覆盖层"
+          fi
+
       # ---- 缓存 1：下载的软件包源码（省 ~20 分钟）----
       - name: Restore download cache
         id: cache-dl

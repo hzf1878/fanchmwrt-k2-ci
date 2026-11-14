@@ -1,0 +1,16 @@
+# 这个文件会被覆盖进固件 rootfs 的 /etc/rc.local
+#
+# 注意：OpenWrt 打包时 files/ 目录下的文件会覆盖 rootfs 中的同名文件，
+# 所以 fwx_app_init 这行必须保留，否则厂商的初始化逻辑会丢失。
+
+# Put your custom commands here that should be executed once
+# the system init finished. By default this file does nothing.
+/usr/bin/fwx_app_init
+
+# 重建 ssr-plus 依赖占位文件
+# 25.12 用 apk 做包管理器，/lib/apk/db 为空、/lib/apk/packages 不存在，
+# 导致 /etc/init.d/shadowsocksr 退回 opkg 路径检查 .control 文件，
+# 而 opkg 的 info 目录里也没有 —— 内核模块明明已加载却报"缺失基础依赖"。
+/usr/bin/ssr-dep-fix.sh
+
+exit 0
