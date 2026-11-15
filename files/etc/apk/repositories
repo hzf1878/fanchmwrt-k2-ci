@@ -1,0 +1,23 @@
+# OpenWrt 25.12.6 mipsel_24kc 软件源
+#
+# 为什么指向 packages.adb 绝对路径：
+# apk-tools 3.0.5 默认按 Alpine 规则拼索引地址：
+#     <源地址>/<arch>/APKINDEX.tar.gz
+# 而 OpenWrt 25.12 的源是平铺布局，只有 packages.adb：
+#     .../base/packages.adb
+# 所以要把源直接写成 packages.adb 的完整 URL，
+# apk 才会直接读取该文件而不是去拼架构子目录。
+#
+# 实测结果（配置成下面三条后）：
+#     3 unavailable, 0 stale; 8838 distinct packages available
+#     apk search tcpdump     → tcpdump-4.99.6-r1
+#
+# 注意：没有官方签名公钥，所有 apk 命令都要加 --allow-untrusted。
+#
+# 最后提醒：装包还依赖 /lib/apk/db/installed 里的已安装记录。
+# 固件若用 CONFIG_USE_APK=y 构建，该文件会有完整内容；
+# 否则 apk 会认为连 libc 都没装，任何包都会报 libc (no such package)。
+
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/base/packages.adb
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/packages/packages.adb
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/luci/packages.adb

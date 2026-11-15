@@ -1,0 +1,14 @@
+# OpenWrt 发行版软件源
+#
+# 为什么需要这个文件：
+# LuCI 的「配置 apk」按钮（/www/luci-static/resources/view/package-manager.js
+# 第 201 行）会无条件读取 repositories.d 下的两个文件：
+#     customfeeds.list
+#     distfeeds.list
+# 固件若缺其中一个，点按钮就弹 NotFoundError 警告。
+#
+# 这里同样要用 packages.adb 绝对路径，原因见 /etc/apk/repositories 的注释。
+
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/base/packages.adb
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/packages/packages.adb
+https://downloads.openwrt.org/releases/25.12.6/packages/mipsel_24kc/luci/packages.adb
