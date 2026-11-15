@@ -361,7 +361,6 @@ jobs:
                 echo "调整后：usb=$WITH_USB exfat=$WITH_EXFAT ntfs=$WITH_NTFS xray=$WITH_XRAY ttyd=$WITH_TTYD ftp=$WITH_FTP upnp=$WITH_UPNP"
               fi
             fi
-            fi
           fi
 
           echo "with_xray=$WITH_XRAY" >> "$GITHUB_OUTPUT"
