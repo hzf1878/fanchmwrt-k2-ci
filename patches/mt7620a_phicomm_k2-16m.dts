@@ -24,3 +24,18 @@
 	pinctrl-0 = <&pa_pins>;
 	pinctrl-1 = <&pa_gpio_pins>;
 };
+
+/*
+ * USB 2.0
+ *
+ * 与 32M 版一致：mt7620a.dtsi 里 ehci / ohci 默认 status = "disabled"，
+ * 原厂 K2 无 USB 口。硬件改造（焊 USB 座 + D+/D- 接 MT7620A）后需打开。
+ * 16M 与 32M 用的是同一块主板，USB 能力相同。
+ */
+&ehci {
+	status = "okay";
+};
+
+&ohci {
+	status = "okay";
+};

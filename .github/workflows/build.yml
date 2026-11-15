@@ -205,9 +205,11 @@ jobs:
           WITH_NTFS="${{ github.event.inputs.with_ntfs }}"
           if [ -z "$WITH_NTFS" ]; then WITH_NTFS="false"; fi
 
-          # USB 只有 k2-32m 的 DTS 启用了 &ehci / &ohci
-          if [ "$WITH_USB" = "true" ] && [ "$DEVICE" != "k2-32m" ]; then
-            echo "::warning title=USB 仅 k2-32m 支持::$DEVICE 的 DTS 未启用 ehci/ohci，已强制关闭 with_usb。"
+          # USB 需要 DTS 启用 &ehci / &ohci。
+          # k2-16m 与 k2-32m 都是同一块改装主板，DTS 均已启用 USB；
+          # k2-8m 可写区只有 320KB，装了也放不下，所以仍然只允许 16m/32m。
+          if [ "$WITH_USB" = "true" ] && [ "$DEVICE" = "k2-8m" ]; then
+            echo "::warning title=USB 不支持 8M::k2-8m 可写区仅 320KB，放不下 USB 相关包（约 2.3MB），已强制关闭 with_usb。"
             WITH_USB="false"
           fi
 
@@ -289,6 +291,10 @@ jobs:
             UPNP_ADD=164000          # with_upnp  miniupnpd 154KB + 界面 10KB
             FILEBROWSER_ADD=1100     # with_filebrowser 只有界面，无二进制
             FTP_ADD=145000           # with_ftp  vsftpd 二进制 132KB + 配置
+            # USB 相关（2026-11-15 从 #32 固件本机实测）
+            USB_ADD=1048576          # with_usb      kmod-usb2/ohci/storage + block-mount
+            EXFAT_ADD=156118         # with_exfat    kmod-fs-exfat + mkfs/fsck.exfat
+            NTFS_ADD=1235408         # with_ntfs     kmod-fs-ntfs3 + ntfs-3g + utils
 
             # ssr-plus 在 16M 上无解：连同 xray 一起关掉，不做半吊子降级
             if [ "$WITH_SSRPLUS" = "true" ]; then
@@ -313,6 +319,9 @@ jobs:
               [ "$WITH_UPNP" = "true" ] && NEED=$((NEED + UPNP_ADD))
               [ "$WITH_FILEBROWSER" = "true" ] && NEED=$((NEED + FILEBROWSER_ADD))
               [ "$WITH_FTP" = "true" ] && NEED=$((NEED + FTP_ADD))
+              [ "$WITH_USB" = "true" ] && NEED=$((NEED + USB_ADD))
+              [ "$WITH_EXFAT" = "true" ] && NEED=$((NEED + EXFAT_ADD))
+              [ "$WITH_NTFS" = "true" ] && NEED=$((NEED + NTFS_ADD))
 
               echo "=== 16M 空间预算 ==="
               echo "分区上界   : $FW_MAX"
@@ -320,11 +329,19 @@ jobs:
               echo "余量       : $((FW_MAX - NEED))"
 
               if [ "$NEED" -gt "$FW_MAX" ]; then
-                # 按实测体积从大到小依次放弃
+                # 按体积从大到小依次放弃，且优先保留"基础能力"：
+                # 存储（USB/exfat/ntfs）> 远程访问（ttyd/ftp）> 便利功能。
+                # 注意 NTFS 关掉时必须同时关掉，因为它依赖 exFAT 无关，
+                # 但 ntfs-3g-utils 依赖 ntfs-3g 提供的库，脚本里成对处理。
                 if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_XRAY" = "true" ]; then
                   echo "::warning title=16M 装不下 xray::已强制关闭 with_xray（约 3.5MB）"
                   WITH_XRAY="false"
                   NEED=$((NEED - XRAY_ADD))
+                fi
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_NTFS" = "true" ]; then
+                  echo "::warning title=16M 装不下 NTFS::已强制关闭 with_ntfs（约 1.2MB）。exFAT 仍可用，若 U 盘需 NTFS 请用 k2-32m。"
+                  WITH_NTFS="false"
+                  NEED=$((NEED - NTFS_ADD))
                 fi
                 if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_TTYD" = "true" ]; then
                   echo "::warning title=16M 装不下 ttyd::已强制关闭 with_ttyd（约 468KB）"
@@ -336,8 +353,14 @@ jobs:
                   WITH_UPNP="false"
                   NEED=$((NEED - UPNP_ADD))
                 fi
-                echo "调整后：xray=$WITH_XRAY ttyd=$WITH_TTYD wol=$WITH_WOL wifischedule=$WITH_WIFISCHEDULE advreboot=$WITH_ADVREBOOT upnp=$WITH_UPNP filebrowser=$WITH_FILEBROWSER"
+                if [ "$NEED" -gt "$FW_MAX" ] && [ "$WITH_FTP" = "true" ]; then
+                  echo "::warning title=16M 装不下 FTP::已强制关闭 with_ftp（约 142KB）"
+                  WITH_FTP="false"
+                  NEED=$((NEED - FTP_ADD))
+                fi
+                echo "调整后：usb=$WITH_USB exfat=$WITH_EXFAT ntfs=$WITH_NTFS xray=$WITH_XRAY ttyd=$WITH_TTYD ftp=$WITH_FTP upnp=$WITH_UPNP"
               fi
+            fi
             fi
           fi
 
