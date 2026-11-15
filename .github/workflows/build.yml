@@ -259,10 +259,15 @@ jobs:
             WITH_XRAY="true"
           fi
 
-          # fastnat 面板依赖 SFE 内核模块。若装了 ssr-plus 且 keep_sfe=false，
-          # configure_ssrplus.py 会关掉 kmod-shortcut-fe，此时面板没有可管的模块
-          if [ "$WITH_HNAT" = "true" ] && [ "$WITH_SSRPLUS" = "true" ] && [ "$KEEP_SFE" != "true" ]; then
-            echo "::warning title=fastnat 面板将无内核模块可管::已装 ssr-plus 且 keep_sfe=false，SFE 会被关闭。with_hnat 仍保留面板，但其中的 SFE 开关不可用；如需完整加速请勾选 keep_sfe。"
+          # SFE 与透明代理互斥：SFE 走软件快速路径绕过 netfilter，
+          # 会让 TPROXY 失效，且无法按端口/mark 排除。所以只要开代理，
+          # keep_sfe 和 with_hnat 一律强制关闭，不保留"看起来能开但没用"的面板。
+          if [ "$WITH_SSRPLUS" = "true" ] || [ "$WITH_XRAY" = "true" ]; then
+            if [ "$KEEP_SFE" = "true" ] || [ "$WITH_HNAT" = "true" ]; then
+              echo "::warning title=代理与 SFE 互斥::已启用 ssr-plus/xray，SFE 快速路径会让 TPROXY 失效，已强制关闭 keep_sfe 与 with_hnat。"
+            fi
+            KEEP_SFE="false"
+            WITH_HNAT="false"
           fi
 
           # with_ss_full 依赖 with_ssrplus（内核无法单独使用）
