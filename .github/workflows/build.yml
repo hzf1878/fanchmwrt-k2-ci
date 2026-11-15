@@ -660,6 +660,24 @@ jobs:
           # 包管理器校验：25.12 起官方源只发 apk 格式（packages.adb + index.json），
           # 不再提供 .ipk 和 Packages.gz。固件必须带 apk，否则装不了任何软件包。
           echo "=== 包管理器校验 ==="
+
+          # CONFIG_USE_APK 决定构建系统按哪种格式打包：
+          #   开启 → 生成 /lib/apk/db（installed/world/triggers），apk 可用
+          #   关闭 → 按 opkg 打包，只生成 /usr/lib/opkg，apk 找不到数据库
+          # 之前 config 里残留 '# CONFIG_USE_APK is not set'，导致固件里
+          # 有 apk 二进制但没有数据库，apk add 连 libc 都报 no such package。
+          if ! grep -qE '^CONFIG_USE_APK=y' .config; then
+            echo "::error title=CONFIG_USE_APK 未开启::固件会带 apk 二进制但缺少 /lib/apk/db，安装任何包都会失败。请检查 config 里的 USE_APK 设置。"
+            exit 1
+          fi
+          echo "  USE_APK = ON（构建系统按 apk 格式打包）"
+
+          if grep -qE '^CONFIG_CLEAN_IPKG=y' .config; then
+            echo "::error title=CLEAN_IPKG 与 USE_APK 冲突::CLEAN_IPKG 依赖 !USE_APK，两者不能同时开启。"
+            exit 1
+          fi
+          echo "  CLEAN_IPKG = OFF（apk 模式下不需要）"
+
           if grep -qE '^CONFIG_PACKAGE_apk-mbedtls=y' .config; then
             echo "  apk-mbedtls = ON（对接官方 apk 源）"
           else
@@ -671,6 +689,17 @@ jobs:
           fi
 
           make defconfig
+
+          # defconfig 会按 Kconfig 默认值重排，可能把 USE_APK 改回去，
+          # 这里再验一次，确保最终 .config 里真的是 apk 模式。
+          echo "=== defconfig 后复查 ==="
+          if ! grep -qE '^CONFIG_USE_APK=y' .config; then
+            echo "::error title=defconfig 覆盖了 USE_APK::make defconfig 之后 CONFIG_USE_APK 不再是 y，说明 config 被重排。请检查 config 文件格式。"
+            grep -n "USE_APK" .config | head -3
+            exit 1
+          fi
+          echo "  USE_APK 保持开启 ✓"
+
           echo "=== Target ==="
           grep -E '^CONFIG_TARGET_PROFILE' .config
           echo "=== ccache ==="
@@ -906,6 +935,10 @@ jobs:
           rm -rf build_dir/target-*/linux-*/*-kernel.bin
           rm -rf bin/targets/ramips/mt7620/*.bin
           rm -rf bin/targets/ramips/mt7620/*.manifest
+          # 从 opkg 切到 apk（CONFIG_USE_APK=y）后要丢掉旧的打包索引，
+          # 否则会沿用 opkg 时代的 Packages/Packages.gz 残留。
+          rm -rf bin/packages/*/tmp 2>/dev/null || true
+          rm -rf tmp/package-ipkg tmp/apk 2>/dev/null || true
           echo "=== cleaned rootfs artifacts ==="
 
           # 上游在 CONFIG_EXPERT=y 下会丢掉 CONFIG_PRINTK，
