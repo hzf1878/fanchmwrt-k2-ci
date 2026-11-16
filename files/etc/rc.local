@@ -17,6 +17,12 @@
 # fstab 服务跑得太早，USB 存储可能还没枚举完，这里再兜一次。
 /usr/bin/usb-automount.sh
 
+# FTP 根目录跟随实际挂载的 U 盘
+# anon_mount=1 之后，插不同的盘会挂到 /mnt/<卷标>，
+# 而 vsftpd 的 local_root 是静态的，需要在这里同步。
+# 放在 automount 之后执行，确保挂载已完成。
+/usr/bin/ftp-root-sync.sh
+
 # 特征库图标自愈（后台执行，不阻塞开机）
 # fwxd 用 libcurl 下载 2.2MB 特征库包时，在 K2 这种设备上偶发下载
 # 不完整（实测停在 2.01MB），解压失败后 icons_skipped=1 但整体仍报

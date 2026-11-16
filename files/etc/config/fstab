@@ -1,0 +1,25 @@
+# fstab：U 盘挂载策略
+#
+# anon_mount=1 让任意 U 盘插上后自动挂到 /mnt/<卷标>，
+# 不需要预先在 fstab 里登记 UUID。
+#
+# auto_mount=1 让 fstab 里配了 UUID 的盘（也就是当前这块 K2DISK）
+# 在开机时按 target 挂载，保持 /mnt/sda1 这个名字不变，
+# 这样 FTP 等依赖固定路径的服务不受影响。
+#
+# 注意：目标 UUID 6BFC-6CB2 是当前这块 U 盘的，换盘后会走匿名挂载
+# 到 /mnt/<新卷标>，此时由 /usr/bin/ftp-root-sync.sh 在启动时
+# 把 vsftpd 的 local_root 同步过去。
+
+config 'global'
+	option	anon_swap	'0'
+	option	anon_mount	'1'
+	option	auto_swap	'1'
+	option	auto_mount	'1'
+	option	delay_root	'5'
+	option	check_fs	'0'
+
+config 'mount'
+	option	target	'/mnt/sda1'
+	option	uuid	'6BFC-6CB2'
+	option	enabled	'1'
