@@ -1,0 +1,9 @@
+# 特征库图标巡检
+#
+# fwxd 下载特征库包（约 2.2MB）偶发不完整，会导致图标目录被清空。
+# ensure-app-icons.sh 会校验完整性后重装，图标数不足才动手，
+# 正常状态直接退出不产生开销。
+#
+# 注意：ssr-plus 自己的定时任务也在本文件里，改动时不要删掉它。
+0 2 * * * /usr/share/shadowsocksr/ssrplusupdate.sh >/var/log/ssrplus.log
+0 4 * * * /usr/bin/ensure-app-icons.sh >/dev/null 2>&1

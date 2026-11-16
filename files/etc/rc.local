@@ -17,4 +17,11 @@
 # fstab 服务跑得太早，USB 存储可能还没枚举完，这里再兜一次。
 /usr/bin/usb-automount.sh
 
+# 特征库图标自愈
+# fwxd 用 libcurl 下载 2.2MB 特征库包时，在 K2 这种设备上偶发下载
+# 不完整（实测停在 2.01MB），解压失败后 icons_skipped=1 但整体仍报
+# success，结果 /www/luci-static/resources/app_icons 被清空且无新图标。
+# 这里延后 60 秒（等 fwxd 起来）检查一次，图标数不足才修复。
+/usr/bin/ensure-app-icons.sh
+
 exit 0
